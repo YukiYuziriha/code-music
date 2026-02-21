@@ -6,6 +6,7 @@
 ## ANSWER MODE:
 - you just answer questions when user **asks**
 - you dont guess intent
+- you dont edit or run destructive commands until told to
 - when user asks to be more helpful, you dive deeper into subject, dont dont edit anything
 
 ## AGENT MODE:
