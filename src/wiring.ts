@@ -22,10 +22,10 @@ term.write(enterAlt);
 term.write(clearAndHome);
 
 term.writeln('wavetable booted');
-term.writeln('press q to exit app screen');
+term.writeln('press Esc to exit app screen');
 
-term.onData((input: string) => {
-  if (input === 'q') {
+term.onKey(({ domEvent }) => {
+  if (domEvent.key === 'Escape') {
     term.write(leaveAlt);
   }
 });
