@@ -1,42 +1,40 @@
-export type WaveForm = "sine" | "square" | "sawtooth" | "triangle";
+import { VoiceRegistry } from "./allocator.js";
+import { ModMatrix, type ModRoute } from "./matrix.js";
+import {
+  copyPatch,
+  createPatch,
+  withAttack,
+  withMasterGain,
+  withMaxVoices,
+  withRelease,
+  withWave,
+  type PolySynthOptions,
+  type SynthPatch,
+  type WaveForm,
+} from "./params.js";
+import { clamp01 } from "./utils.js";
+import { SynthVoice } from "./voice.js";
 
-interface Voice {
-  osc: OscillatorNode;
-  amp: GainNode;
-  midi: number;
-}
-
-interface PolySynthOptions {
-  maxVoices: number;
-  attack: number;
-  release: number;
-  masterGain: number;
-  wave: WaveForm;
-}
-
-const midiToHz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
-
-const DEFAULTS: PolySynthOptions = {
-  maxVoices: 8,
-  attack: 0.01,
-  release: 0.15,
-  masterGain: 0.2,
-  wave: "sawtooth",
-};
+export type { PolySynthOptions, SynthPatch, WaveForm } from "./params.js";
+export type { ModRoute } from "./matrix.js";
 
 export class PolySynth {
   private readonly ctx: AudioContext;
   private readonly master: GainNode;
-  private readonly voices = new Map<number, Voice>();
-  private options: PolySynthOptions;
+  private readonly voices: VoiceRegistry;
+  private readonly modMatrix: ModMatrix;
+  private patch: SynthPatch;
 
   constructor(ctx: AudioContext, options?: Partial<PolySynthOptions>) {
     this.ctx = ctx;
-    this.options = { ...DEFAULTS, ...options };
+    this.patch = createPatch(options);
 
     this.master = this.ctx.createGain();
-    this.master.gain.value = this.options.masterGain;
+    this.master.gain.value = this.patch.global.masterGain;
     this.master.connect(this.ctx.destination);
+
+    this.voices = new VoiceRegistry(this.patch.global.maxVoices);
+    this.modMatrix = new ModMatrix();
   }
 
   async resumeIfNeeded(): Promise<void> {
@@ -46,64 +44,69 @@ export class PolySynth {
   }
 
   setWave(wave: WaveForm): void {
-    this.options.wave = wave;
+    this.patch = withWave(this.patch, wave);
+    this.voices.forEachVoice((voice) => {
+      voice.setWave(wave);
+    });
   }
 
   setMasterGain(value: number): void {
-    const next = Math.max(0, Math.min(1, value));
-    this.master.gain.setValueAtTime(next, this.ctx.currentTime);
+    this.patch = withMasterGain(this.patch, value);
+    this.master.gain.setValueAtTime(
+      this.patch.global.masterGain,
+      this.ctx.currentTime,
+    );
+  }
+
+  setAttack(value: number): void {
+    this.patch = withAttack(this.patch, value);
+  }
+
+  setRelease(value: number): void {
+    this.patch = withRelease(this.patch, value);
+  }
+
+  setMaxVoices(value: number): void {
+    this.patch = withMaxVoices(this.patch, value);
+    this.voices.setMaxVoices(this.patch.global.maxVoices, this.ctx.currentTime);
+  }
+
+  setModRoutes(routes: readonly ModRoute[]): void {
+    this.modMatrix.setRoutes(routes);
+  }
+
+  getModRoutes(): readonly ModRoute[] {
+    return this.modMatrix.getRoutes();
+  }
+
+  getPatch(): SynthPatch {
+    return copyPatch(this.patch);
   }
 
   noteOn(midi: number, velocity = 1): void {
     if (this.voices.has(midi)) return;
 
-    if (this.voices.size >= this.options.maxVoices) {
-      const oldest = this.voices.keys().next().value as number | undefined;
-      if (oldest !== undefined) this.noteOff(oldest);
-    }
-
     const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const amp = this.ctx.createGain();
+    const voice = new SynthVoice({
+      ctx: this.ctx,
+      output: this.master,
+      patch: copyPatch(this.patch),
+      midi,
+      velocity: clamp01(velocity),
+      onEnded: (endedMidi) => {
+        this.voices.remove(endedMidi);
+      },
+    });
 
-    osc.type = this.options.wave;
-    osc.frequency.setValueAtTime(midiToHz(midi), now);
-
-    const target = Math.max(0, Math.min(1, velocity));
-    amp.gain.setValueAtTime(0, now);
-    amp.gain.linearRampToValueAtTime(target, now + this.options.attack);
-
-    osc.connect(amp);
-    amp.connect(this.master);
-
-    const voice: Voice = { osc, amp, midi };
-    this.voices.set(midi, voice);
-
-    osc.onended = () => {
-      this.voices.delete(midi);
-      osc.disconnect();
-      amp.disconnect();
-    };
-
-    osc.start(now);
+    this.voices.add(voice, now);
+    voice.start(now);
   }
 
   noteOff(midi: number): void {
-    const voice = this.voices.get(midi);
-    if (!voice) return;
-
-    const now = this.ctx.currentTime;
-    const end = now + this.options.release;
-
-    voice.amp.gain.cancelScheduledValues(now);
-    voice.amp.gain.setValueAtTime(voice.amp.gain.value, now);
-    voice.amp.gain.linearRampToValueAtTime(0, end);
-
-    voice.osc.stop(end + 0.02);
+    this.voices.release(midi, this.ctx.currentTime);
   }
 
   panic(): void {
-    const active = [...this.voices.keys()];
-    for (const midi of active) this.noteOff(midi);
+    this.voices.panic(this.ctx.currentTime);
   }
 }
