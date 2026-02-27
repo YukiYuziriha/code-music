@@ -1,4 +1,4 @@
-import { cell, divider, row, statusCell, type Tone } from "../ansi.js";
+import { divider, row, statusCell, type Tone } from "../ansi.js";
 import type { AppState } from "../../app/types.js";
 
 const toneByWave: Record<AppState["currentWave"], Tone> = {
@@ -13,39 +13,27 @@ export const renderStatusPanel = (
   panelWidth: number,
   fullWidth: number,
 ): string[] => {
-  const modeBadge = state.inputMode === "play" ? "PLAY MODE" : "NAV MODE";
-  const modeHelp =
-    state.inputMode === "play"
-      ? "Play notes on keyboard"
-      : "h j k l set nav action";
   const activeNotes =
     state.activeKeys.size > 0
       ? Array.from(state.activeKeys.values()).join(" ")
       : "none";
   const octaveLabel = `${state.octaveOffset >= 0 ? "+" : ""}${state.octaveOffset}`;
-  const modeTone: Tone = state.inputMode === "play" ? "green" : "pink";
 
   return [
     row(
-      statusCell("mode", modeBadge, panelWidth, modeTone, true),
       statusCell(
         "wave",
-        state.currentWave,
+        `${state.currentWave} [1-4]`,
         panelWidth,
         toneByWave[state.currentWave],
         true,
       ),
+      statusCell("octave", `${octaveLabel} [-+]`, panelWidth, "cyan"),
     ),
     row(
-      statusCell("octave", octaveLabel, panelWidth, "cyan"),
       statusCell("voices", String(state.activeKeys.size), panelWidth, "green"),
-    ),
-    row(
-      statusCell("last nav", state.lastNavAction, panelWidth, "pink"),
       statusCell("active midi", activeNotes, panelWidth, "amber"),
     ),
-    divider(fullWidth),
-    cell(modeHelp, fullWidth, "gray"),
     divider(fullWidth),
   ];
 };
