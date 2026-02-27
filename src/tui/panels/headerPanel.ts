@@ -13,8 +13,8 @@ export const renderHeaderPanel = (
 
   const detailLabel =
     mode === "play"
-      ? "SHORTCUTS ACTIVE: OSC"
-      : `BLOCK: ${state.selectedBlock.toUpperCase()}  MATRIX: ${state.matrixMode.toUpperCase()}`;
+      ? `SHORTCUTS ACTIVE: ${state.selectedBlock === "osc" ? "OSCILLATOR" : "ENVELOPE"}`
+      : `BLOCK: ${state.selectedBlock === "osc" ? "OSCILLATOR" : "ENVELOPE"}  MATRIX: ${state.matrixMode.toUpperCase()}`;
 
   return [
     divider(fullWidth),

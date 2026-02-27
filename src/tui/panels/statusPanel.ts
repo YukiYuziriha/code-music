@@ -7,6 +7,7 @@ import {
   type Tone,
 } from "../ansi.js";
 import { getBlockCells, getCellShortLabel } from "../../app/blocks.js";
+import { CELL_SHORTCUTS } from "../../app/shortcuts.js";
 import type { AppState, BlockId, CellId } from "../../app/types.js";
 
 const toneByWave: Record<AppState["currentWave"], Tone> = {
@@ -31,10 +32,6 @@ const formatSeconds = (value: number): string => {
 };
 
 const getCellValue = (state: AppState, cellId: CellId): string => {
-  const activeNotes =
-    state.activeKeys.size > 0
-      ? Array.from(state.activeKeys.values()).join(" ")
-      : "none";
   const octaveLabel = `${state.octaveOffset >= 0 ? "+" : ""}${state.octaveOffset}`;
 
   switch (cellId) {
@@ -48,10 +45,6 @@ const getCellValue = (state: AppState, cellId: CellId): string => {
       return `${state.unisonDetuneCents.toFixed(1)}c`;
     case "osc.morph":
       return morphLabelByMode[state.oscMorphMode];
-    case "osc.activeVoices":
-      return String(state.activeKeys.size);
-    case "osc.activeMidi":
-      return activeNotes;
     case "env.delay":
       return formatSeconds(state.env.delay);
     case "env.attack":
@@ -80,11 +73,11 @@ const getCellValue = (state: AppState, cellId: CellId): string => {
 const getCellHint = (
   state: AppState,
   blockId: BlockId,
-  cellId: CellId,
+  cellIndex: number,
   isBlockFocused: boolean,
 ): string => {
   if (!isBlockFocused) return "";
-  if (state.inputMode !== "nav") return "";
+
   if (state.matrixMode === "pick-block") {
     return blockId === state.matrixSelection?.targetBlock ? "enter" : "h l";
   }
@@ -92,29 +85,7 @@ const getCellHint = (
     return blockId === state.matrixSelection?.targetBlock ? "j k enter" : "";
   }
 
-  switch (cellId) {
-    case "osc.wave":
-      return "1-4 w e";
-    case "osc.octave":
-      return "r t";
-    case "osc.unisonVoices":
-      return "y u";
-    case "osc.unisonDetuneCents":
-      return "i o";
-    case "osc.morph":
-      return "[ ]";
-    case "env.delay":
-    case "env.attack":
-    case "env.hold":
-    case "env.decay":
-    case "env.sustain":
-    case "env.release":
-      return "- =";
-    case "env.matrix":
-      return "enter";
-    default:
-      return "";
-  }
+  return CELL_SHORTCUTS[cellIndex]?.hint ?? "";
 };
 
 const isLinkedByCurrentSource = (
@@ -167,7 +138,7 @@ const renderBlockColumn = (
 ): string[] => {
   const cells = getBlockCells(blockId);
   const isFocused = state.selectedBlock === blockId;
-  const titleText = `${blockId.toUpperCase()} BLOCK`;
+  const titleText = blockId === "osc" ? "OSCILLATOR" : "ENVELOPE";
 
   const rows = cells.map((cellMeta, index) => {
     if (cellMeta.id.endsWith(".empty")) {
@@ -175,7 +146,7 @@ const renderBlockColumn = (
     }
 
     const value = getCellValue(state, cellMeta.id);
-    const hint = getCellHint(state, blockId, cellMeta.id, isFocused);
+    const hint = getCellHint(state, blockId, index, isFocused);
     const { tone, bold } = getCellTone(state, blockId, cellMeta.id, index);
     return hint.length > 0
       ? statusCellWithHint(cellMeta.label, value, hint, panelWidth, tone, bold)

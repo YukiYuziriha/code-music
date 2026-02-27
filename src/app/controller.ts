@@ -6,6 +6,7 @@ import type { AudioEngine } from "../audio/engine.js";
 import type { AppAction } from "./actions.js";
 import { getBlockCells } from "./blocks.js";
 import { keyToSemitone, waveByKey } from "./keymap.js";
+import { CELL_SHORTCUTS } from "./shortcuts.js";
 import { toMidi } from "./state.js";
 import type { AppState } from "./types.js";
 
@@ -93,6 +94,125 @@ export const createController = (deps: ControllerDependencies) => {
     deps.engine.setRelease(env.release);
   };
 
+  const applyOscCellShortcut = (
+    cellIndex: number,
+    direction: -1 | 1,
+    key: string,
+  ): boolean => {
+    if (cellIndex === 0) {
+      const wave = waveByKey[key];
+      if (wave !== undefined) {
+        setWave(wave);
+        return true;
+      }
+
+      const nextWave = cycleWave(deps.getState().currentWave, direction);
+      setWave(nextWave);
+      return true;
+    }
+
+    if (cellIndex === 1) {
+      deps.dispatch({ type: "octave/shift", delta: direction });
+      return true;
+    }
+
+    if (cellIndex === 2) {
+      shiftUnisonVoices(direction);
+      return true;
+    }
+
+    if (cellIndex === 3) {
+      shiftUnisonDetune(direction * 2);
+      return true;
+    }
+
+    if (cellIndex === 4) {
+      cycleMorph(direction);
+      return true;
+    }
+
+    return false;
+  };
+
+  const applyEnvCellShortcut = (
+    cellIndex: number,
+    direction: -1 | 1,
+    key: string,
+  ): boolean => {
+    if (cellIndex === 0) {
+      deps.dispatch({ type: "env/delay/shift", delta: direction });
+      syncEnv();
+      return true;
+    }
+
+    if (cellIndex === 1) {
+      deps.dispatch({ type: "env/attack/shift", delta: direction });
+      syncEnv();
+      return true;
+    }
+
+    if (cellIndex === 2) {
+      deps.dispatch({ type: "env/hold/shift", delta: direction });
+      syncEnv();
+      return true;
+    }
+
+    if (cellIndex === 3) {
+      deps.dispatch({ type: "env/decay/shift", delta: direction });
+      syncEnv();
+      return true;
+    }
+
+    if (cellIndex === 4) {
+      deps.dispatch({ type: "env/sustain/shift", delta: direction });
+      syncEnv();
+      return true;
+    }
+
+    if (cellIndex === 5) {
+      deps.dispatch({ type: "env/release/shift", delta: direction });
+      syncEnv();
+      return true;
+    }
+
+    if (cellIndex === 6 && key === "enter") {
+      startMatrixPick();
+      return true;
+    }
+
+    return false;
+  };
+
+  const handleSelectedBlockShortcut = (key: string): boolean => {
+    const state = deps.getState();
+    const blockId = state.selectedBlock;
+
+    if (blockId === "osc") {
+      const directWave = waveByKey[key];
+      if (directWave !== undefined) {
+        setWave(directWave);
+        return true;
+      }
+    }
+
+    for (let index = 0; index < CELL_SHORTCUTS.length; index += 1) {
+      const shortcut = CELL_SHORTCUTS[index];
+      if (shortcut === undefined) continue;
+      if (shortcut.hint.length === 0) continue;
+
+      let direction: -1 | 1 | null = null;
+      if (key === shortcut.decKey) direction = -1;
+      if (key === shortcut.incKey) direction = 1;
+      if (direction === null) continue;
+
+      return blockId === "osc"
+        ? applyOscCellShortcut(index, direction, key)
+        : applyEnvCellShortcut(index, direction, key);
+    }
+
+    return false;
+  };
+
   const startMatrixPick = (): void => {
     const oscCells = getBlockCells("osc");
     const firstTargetIndex = oscCells.findIndex((cell) => cell.targetable);
@@ -175,74 +295,8 @@ export const createController = (deps: ControllerDependencies) => {
         deps.dispatch({ type: "nav/cell/cycle", delta: 1 });
         return "none";
       }
-      if (key === "-") {
-        const state = deps.getState();
-        if (state.selectedBlock !== "env") return "none";
-        const selectedCell =
-          getBlockCells("env")[state.selectedCellByBlock.env]?.id;
-        switch (selectedCell) {
-          case "env.delay":
-            deps.dispatch({ type: "env/delay/shift", delta: -1 });
-            break;
-          case "env.attack":
-            deps.dispatch({ type: "env/attack/shift", delta: -1 });
-            break;
-          case "env.hold":
-            deps.dispatch({ type: "env/hold/shift", delta: -1 });
-            break;
-          case "env.decay":
-            deps.dispatch({ type: "env/decay/shift", delta: -1 });
-            break;
-          case "env.sustain":
-            deps.dispatch({ type: "env/sustain/shift", delta: -1 });
-            break;
-          case "env.release":
-            deps.dispatch({ type: "env/release/shift", delta: -1 });
-            break;
-          default:
-            return "none";
-        }
-        syncEnv();
+      if (handleSelectedBlockShortcut(key)) {
         return "none";
-      }
-      if (key === "=") {
-        const state = deps.getState();
-        if (state.selectedBlock !== "env") return "none";
-        const selectedCell =
-          getBlockCells("env")[state.selectedCellByBlock.env]?.id;
-        switch (selectedCell) {
-          case "env.delay":
-            deps.dispatch({ type: "env/delay/shift", delta: 1 });
-            break;
-          case "env.attack":
-            deps.dispatch({ type: "env/attack/shift", delta: 1 });
-            break;
-          case "env.hold":
-            deps.dispatch({ type: "env/hold/shift", delta: 1 });
-            break;
-          case "env.decay":
-            deps.dispatch({ type: "env/decay/shift", delta: 1 });
-            break;
-          case "env.sustain":
-            deps.dispatch({ type: "env/sustain/shift", delta: 1 });
-            break;
-          case "env.release":
-            deps.dispatch({ type: "env/release/shift", delta: 1 });
-            break;
-          default:
-            return "none";
-        }
-        syncEnv();
-        return "none";
-      }
-      if (key === "enter") {
-        const state = deps.getState();
-        if (state.selectedBlock !== "env") return "none";
-        const selectedCell =
-          getBlockCells("env")[state.selectedCellByBlock.env]?.id;
-        if (selectedCell === "env.matrix") {
-          startMatrixPick();
-        }
       }
       return "none";
     }
@@ -317,61 +371,7 @@ export const createController = (deps: ControllerDependencies) => {
       return "quit";
     }
 
-    if (key === "r") {
-      deps.dispatch({ type: "octave/shift", delta: -1 });
-      return "none";
-    }
-
-    if (key === "t") {
-      deps.dispatch({ type: "octave/shift", delta: 1 });
-      return "none";
-    }
-
-    if (key === "y") {
-      shiftUnisonVoices(-1);
-      return "none";
-    }
-
-    if (key === "u") {
-      shiftUnisonVoices(1);
-      return "none";
-    }
-
-    if (key === "i") {
-      shiftUnisonDetune(-2);
-      return "none";
-    }
-
-    if (key === "o") {
-      shiftUnisonDetune(2);
-      return "none";
-    }
-
-    if (key === "[") {
-      cycleMorph(-1);
-      return "none";
-    }
-
-    if (key === "]") {
-      cycleMorph(1);
-      return "none";
-    }
-
-    if (key === "w") {
-      const nextWave = cycleWave(deps.getState().currentWave, -1);
-      setWave(nextWave);
-      return "none";
-    }
-
-    if (key === "e") {
-      const nextWave = cycleWave(deps.getState().currentWave, 1);
-      setWave(nextWave);
-      return "none";
-    }
-
-    const wave: WaveForm | undefined = waveByKey[key];
-    if (wave !== undefined) {
-      setWave(wave);
+    if (handleSelectedBlockShortcut(key)) {
       return "none";
     }
 
