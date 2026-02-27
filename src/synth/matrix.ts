@@ -2,10 +2,10 @@ import { clamp } from "./utils.js";
 
 export type ModSource = "env1" | "lfo1" | "velocity" | "random1";
 export type ModTarget =
-  | "osc.detune"
-  | "amp.level"
-  | "filter.cutoff"
-  | "filter.resonance";
+  | "osc.unisonVoices"
+  | "osc.unisonDetuneCents"
+  | "osc.level"
+  | "amp.level";
 
 export interface ModRoute {
   source: ModSource;

@@ -4,10 +4,14 @@ import {
   copyPatch,
   createPatch,
   withAttack,
+  withDecay,
+  withDelay,
+  withHold,
   withMasterGain,
   withMaxVoices,
   withMorphMode,
   withRelease,
+  withSustain,
   withUnisonDetuneCents,
   withUnisonVoices,
   withWave,
@@ -69,6 +73,22 @@ export class PolySynth {
 
   setAttack(value: number): void {
     this.patch = withAttack(this.patch, value);
+  }
+
+  setDelay(value: number): void {
+    this.patch = withDelay(this.patch, value);
+  }
+
+  setHold(value: number): void {
+    this.patch = withHold(this.patch, value);
+  }
+
+  setDecay(value: number): void {
+    this.patch = withDecay(this.patch, value);
+  }
+
+  setSustain(value: number): void {
+    this.patch = withSustain(this.patch, value);
   }
 
   setRelease(value: number): void {

@@ -11,7 +11,11 @@ type EngineOptions = PolySynthOptions;
 
 const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   maxVoices: 8,
+  delay: 0,
   attack: 0.01,
+  hold: 0,
+  decay: 0.2,
+  sustain: 0.8,
   release: 0.15,
   wave: "sawtooth",
   morphMode: "none",
@@ -53,6 +57,22 @@ export class AudioEngine {
 
   setAttack(value: number): void {
     this.synth.setAttack(value);
+  }
+
+  setDelay(value: number): void {
+    this.synth.setDelay(value);
+  }
+
+  setHold(value: number): void {
+    this.synth.setHold(value);
+  }
+
+  setDecay(value: number): void {
+    this.synth.setDecay(value);
+  }
+
+  setSustain(value: number): void {
+    this.synth.setSustain(value);
   }
 
   setRelease(value: number): void {

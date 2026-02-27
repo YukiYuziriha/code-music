@@ -1,7 +1,7 @@
 import {
   createVoiceBlocks,
   type MorphChain,
-  scheduleAmpAttack,
+  scheduleAmpEnvelopeStart,
   scheduleAmpRelease,
   unisonGainScale,
 } from "./blocks.js";
@@ -68,11 +68,11 @@ export class SynthVoice {
   start(now: number): void {
     if (this.state !== "idle") return;
 
-    scheduleAmpAttack(
+    scheduleAmpEnvelopeStart(
       this.amp,
       now,
       this.velocity * unisonGainScale(this.patch.voice.osc.unisonVoices),
-      this.patch.voice.ampEnv.attack,
+      this.patch.voice.ampEnv,
     );
     for (const osc of this.oscs) {
       osc.start(now);

@@ -12,7 +12,11 @@ export type OscMorphMode =
 
 export interface PolySynthOptions {
   maxVoices: number;
+  delay: number;
   attack: number;
+  hold: number;
+  decay: number;
+  sustain: number;
   release: number;
   masterGain: number;
   wave: WaveForm;
@@ -31,7 +35,11 @@ export interface OscillatorParams {
 }
 
 export interface AmpEnvelopeParams {
+  delay: number;
   attack: number;
+  hold: number;
+  decay: number;
+  sustain: number;
   release: number;
 }
 
@@ -58,7 +66,11 @@ const MAX_UNISON_DETUNE_CENTS = 100;
 
 export const DEFAULT_POLY_SYNTH_OPTIONS: PolySynthOptions = {
   maxVoices: 8,
+  delay: 0,
   attack: 0.01,
+  hold: 0,
+  decay: 0.2,
+  sustain: 0.8,
   release: 0.15,
   masterGain: 0.2,
   wave: "sawtooth",
@@ -102,7 +114,11 @@ export const createPatch = (
         morphMode: merged.morphMode,
       },
       ampEnv: {
+        delay: clampEnvTime(merged.delay),
         attack: clampEnvTime(merged.attack),
+        hold: clampEnvTime(merged.hold),
+        decay: clampEnvTime(merged.decay),
+        sustain: clamp01(merged.sustain),
         release: clampEnvTime(merged.release),
       },
     },
@@ -170,6 +186,58 @@ export const withAttack = (patch: SynthPatch, attack: number): SynthPatch => {
       ampEnv: {
         ...patch.voice.ampEnv,
         attack: clampEnvTime(attack),
+      },
+    },
+  };
+};
+
+export const withDelay = (patch: SynthPatch, delay: number): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      ampEnv: {
+        ...patch.voice.ampEnv,
+        delay: clampEnvTime(delay),
+      },
+    },
+  };
+};
+
+export const withHold = (patch: SynthPatch, hold: number): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      ampEnv: {
+        ...patch.voice.ampEnv,
+        hold: clampEnvTime(hold),
+      },
+    },
+  };
+};
+
+export const withDecay = (patch: SynthPatch, decay: number): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      ampEnv: {
+        ...patch.voice.ampEnv,
+        decay: clampEnvTime(decay),
+      },
+    },
+  };
+};
+
+export const withSustain = (patch: SynthPatch, sustain: number): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      ampEnv: {
+        ...patch.voice.ampEnv,
+        sustain: clamp01(sustain),
       },
     },
   };

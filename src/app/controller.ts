@@ -1,9 +1,13 @@
-import type { WaveForm } from "../synth/polySynth.js";
+import type {
+  ModRoute as SynthModRoute,
+  WaveForm,
+} from "../synth/polySynth.js";
 import type { AudioEngine } from "../audio/engine.js";
 import type { AppAction } from "./actions.js";
+import { getBlockCells } from "./blocks.js";
 import { keyToSemitone, waveByKey } from "./keymap.js";
 import { toMidi } from "./state.js";
-import type { AppState, InputMode, NavAction } from "./types.js";
+import type { AppState } from "./types.js";
 
 export type ControllerSignal = "none" | "quit";
 
@@ -13,14 +17,7 @@ interface ControllerDependencies {
   dispatch: (action: AppAction) => void;
 }
 
-const navActionByKey: Record<string, NavAction> = {
-  h: "left",
-  j: "down",
-  k: "up",
-  l: "right",
-};
-
-const toggleMode = (mode: InputMode): InputMode => {
+const toggleMode = (mode: AppState["inputMode"]): AppState["inputMode"] => {
   return mode === "play" ? "nav" : "play";
 };
 
@@ -40,6 +37,32 @@ const cycleWave = (current: WaveForm, delta: -1 | 1): WaveForm => {
 };
 
 export const createController = (deps: ControllerDependencies) => {
+  const syncModRoutes = (): void => {
+    const routes: SynthModRoute[] = [];
+    for (const route of deps.getState().modRoutes) {
+      if (!route.enabled) continue;
+      if (route.target === "osc.unisonDetuneCents") {
+        routes.push({
+          source: route.source,
+          target: "osc.unisonDetuneCents",
+          amount: route.amount,
+          bipolar: true,
+        });
+      }
+
+      if (route.target === "osc.unisonVoices") {
+        routes.push({
+          source: route.source,
+          target: "osc.unisonVoices",
+          amount: route.amount,
+          bipolar: false,
+        });
+      }
+    }
+
+    deps.engine.setModRoutes(routes);
+  };
+
   const setWave = (wave: WaveForm): void => {
     deps.engine.setWave(wave);
     deps.dispatch({ type: "wave/set", wave });
@@ -60,15 +83,222 @@ export const createController = (deps: ControllerDependencies) => {
     deps.engine.setOscMorphMode(deps.getState().oscMorphMode);
   };
 
+  const syncEnv = (): void => {
+    const env = deps.getState().env;
+    deps.engine.setDelay(env.delay);
+    deps.engine.setAttack(env.attack);
+    deps.engine.setHold(env.hold);
+    deps.engine.setDecay(env.decay);
+    deps.engine.setSustain(env.sustain);
+    deps.engine.setRelease(env.release);
+  };
+
+  const startMatrixPick = (): void => {
+    const oscCells = getBlockCells("osc");
+    const firstTargetIndex = oscCells.findIndex((cell) => cell.targetable);
+
+    deps.dispatch({
+      type: "matrix/selection/set",
+      selection: {
+        source: "env1",
+        originBlock: "env",
+        originCellIndex: deps.getState().selectedCellByBlock.env,
+        targetBlock: "osc",
+        targetCellIndex: firstTargetIndex < 0 ? 0 : firstTargetIndex,
+      },
+    });
+    deps.dispatch({ type: "nav/block/select", block: "osc" });
+    deps.dispatch({ type: "matrix/mode/set", mode: "pick-block" });
+  };
+
+  const applyMatrixRoute = (): void => {
+    const selection = deps.getState().matrixSelection;
+    if (selection === null) return;
+
+    const targetCells = getBlockCells(selection.targetBlock);
+    const targetCell = targetCells[selection.targetCellIndex];
+    if (targetCell === undefined || !targetCell.targetable) {
+      return;
+    }
+
+    deps.dispatch({
+      type: "matrix/route/toggle",
+      source: selection.source,
+      target: targetCell.id,
+    });
+    syncModRoutes();
+
+    deps.dispatch({ type: "nav/block/select", block: selection.originBlock });
+    deps.dispatch({ type: "matrix/mode/set", mode: "idle" });
+    deps.dispatch({ type: "matrix/selection/set", selection: null });
+  };
+
+  const handleNavKeyDown = (key: string): ControllerSignal => {
+    const matrixMode = deps.getState().matrixMode;
+
+    if (key === "escape") {
+      if (matrixMode === "pick-cell") {
+        deps.dispatch({ type: "matrix/mode/set", mode: "pick-block" });
+        return "none";
+      }
+
+      if (matrixMode === "pick-block") {
+        const selection = deps.getState().matrixSelection;
+        if (selection !== null) {
+          deps.dispatch({
+            type: "nav/block/select",
+            block: selection.originBlock,
+          });
+        }
+        deps.dispatch({ type: "matrix/mode/set", mode: "idle" });
+        deps.dispatch({ type: "matrix/selection/set", selection: null });
+        return "none";
+      }
+
+      return "quit";
+    }
+
+    if (matrixMode === "idle") {
+      if (key === "h") {
+        deps.dispatch({ type: "nav/block/cycle", delta: -1 });
+        return "none";
+      }
+      if (key === "l") {
+        deps.dispatch({ type: "nav/block/cycle", delta: 1 });
+        return "none";
+      }
+      if (key === "k") {
+        deps.dispatch({ type: "nav/cell/cycle", delta: -1 });
+        return "none";
+      }
+      if (key === "j") {
+        deps.dispatch({ type: "nav/cell/cycle", delta: 1 });
+        return "none";
+      }
+      if (key === "-") {
+        const state = deps.getState();
+        if (state.selectedBlock !== "env") return "none";
+        const selectedCell =
+          getBlockCells("env")[state.selectedCellByBlock.env]?.id;
+        switch (selectedCell) {
+          case "env.delay":
+            deps.dispatch({ type: "env/delay/shift", delta: -1 });
+            break;
+          case "env.attack":
+            deps.dispatch({ type: "env/attack/shift", delta: -1 });
+            break;
+          case "env.hold":
+            deps.dispatch({ type: "env/hold/shift", delta: -1 });
+            break;
+          case "env.decay":
+            deps.dispatch({ type: "env/decay/shift", delta: -1 });
+            break;
+          case "env.sustain":
+            deps.dispatch({ type: "env/sustain/shift", delta: -1 });
+            break;
+          case "env.release":
+            deps.dispatch({ type: "env/release/shift", delta: -1 });
+            break;
+          default:
+            return "none";
+        }
+        syncEnv();
+        return "none";
+      }
+      if (key === "=") {
+        const state = deps.getState();
+        if (state.selectedBlock !== "env") return "none";
+        const selectedCell =
+          getBlockCells("env")[state.selectedCellByBlock.env]?.id;
+        switch (selectedCell) {
+          case "env.delay":
+            deps.dispatch({ type: "env/delay/shift", delta: 1 });
+            break;
+          case "env.attack":
+            deps.dispatch({ type: "env/attack/shift", delta: 1 });
+            break;
+          case "env.hold":
+            deps.dispatch({ type: "env/hold/shift", delta: 1 });
+            break;
+          case "env.decay":
+            deps.dispatch({ type: "env/decay/shift", delta: 1 });
+            break;
+          case "env.sustain":
+            deps.dispatch({ type: "env/sustain/shift", delta: 1 });
+            break;
+          case "env.release":
+            deps.dispatch({ type: "env/release/shift", delta: 1 });
+            break;
+          default:
+            return "none";
+        }
+        syncEnv();
+        return "none";
+      }
+      if (key === "enter") {
+        const state = deps.getState();
+        if (state.selectedBlock !== "env") return "none";
+        const selectedCell =
+          getBlockCells("env")[state.selectedCellByBlock.env]?.id;
+        if (selectedCell === "env.matrix") {
+          startMatrixPick();
+        }
+      }
+      return "none";
+    }
+
+    if (matrixMode === "pick-block") {
+      if (key === "h") {
+        deps.dispatch({ type: "matrix/target/block/cycle", delta: -1 });
+        const next = deps.getState().matrixSelection;
+        if (next !== null) {
+          deps.dispatch({ type: "nav/block/select", block: next.targetBlock });
+        }
+        return "none";
+      }
+      if (key === "l") {
+        deps.dispatch({ type: "matrix/target/block/cycle", delta: 1 });
+        const next = deps.getState().matrixSelection;
+        if (next !== null) {
+          deps.dispatch({ type: "nav/block/select", block: next.targetBlock });
+        }
+        return "none";
+      }
+      if (key === "enter") {
+        const selection = deps.getState().matrixSelection;
+        if (selection !== null) {
+          deps.dispatch({
+            type: "nav/block/select",
+            block: selection.targetBlock,
+          });
+        }
+        deps.dispatch({ type: "matrix/mode/set", mode: "pick-cell" });
+      }
+      return "none";
+    }
+
+    if (matrixMode === "pick-cell") {
+      if (key === "k") {
+        deps.dispatch({ type: "matrix/target/cell/cycle", delta: -1 });
+        return "none";
+      }
+      if (key === "j") {
+        deps.dispatch({ type: "matrix/target/cell/cycle", delta: 1 });
+        return "none";
+      }
+      if (key === "enter") {
+        applyMatrixRoute();
+      }
+    }
+
+    return "none";
+  };
+
   const handleKeyDown = (event: KeyboardEvent): ControllerSignal => {
     const key = event.key.toLowerCase();
     const isUnisonDetuneKey = key === "i" || key === "o";
 
     if (event.repeat && !isUnisonDetuneKey) return "none";
-
-    if (key === "escape") {
-      return "quit";
-    }
 
     if (key === "`") {
       const nextMode = toggleMode(deps.getState().inputMode);
@@ -80,11 +310,11 @@ export const createController = (deps: ControllerDependencies) => {
     }
 
     if (deps.getState().inputMode === "nav") {
-      const action = navActionByKey[key];
-      if (action !== undefined) {
-        deps.dispatch({ type: "nav/set", action });
-      }
-      return "none";
+      return handleNavKeyDown(key);
+    }
+
+    if (key === "escape") {
+      return "quit";
     }
 
     if (key === "r") {

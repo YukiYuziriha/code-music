@@ -207,21 +207,42 @@ export const createVoiceBlocks = (input: VoiceBlockInput): VoiceBlocks => {
   return { oscs, morph, amp };
 };
 
-export const scheduleAmpAttack = (
+export const scheduleAmpEnvelopeStart = (
   amp: GainNode,
   now: number,
   targetLevel: number,
-  attack: number,
+  env: {
+    delay: number;
+    attack: number;
+    hold: number;
+    decay: number;
+    sustain: number;
+  },
 ): void => {
   amp.gain.cancelScheduledValues(now);
   amp.gain.setValueAtTime(0, now);
 
-  if (attack <= 0) {
-    amp.gain.setValueAtTime(targetLevel, now);
+  const delayEnd = now + Math.max(0, env.delay);
+  amp.gain.setValueAtTime(0, delayEnd);
+
+  const attackEnd = delayEnd + Math.max(0, env.attack);
+  if (env.attack <= 0) {
+    amp.gain.setValueAtTime(targetLevel, delayEnd);
+  } else {
+    amp.gain.linearRampToValueAtTime(targetLevel, attackEnd);
+  }
+
+  const holdEnd = attackEnd + Math.max(0, env.hold);
+  amp.gain.setValueAtTime(targetLevel, holdEnd);
+
+  const sustainLevel = targetLevel * Math.max(0, Math.min(1, env.sustain));
+  const decayEnd = holdEnd + Math.max(0, env.decay);
+  if (env.decay <= 0) {
+    amp.gain.setValueAtTime(sustainLevel, holdEnd);
     return;
   }
 
-  amp.gain.linearRampToValueAtTime(targetLevel, now + attack);
+  amp.gain.linearRampToValueAtTime(sustainLevel, decayEnd);
 };
 
 export const scheduleAmpRelease = (

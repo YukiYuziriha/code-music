@@ -11,7 +11,7 @@ const FULL_WIDTH = PANEL_WIDTH * 2 + 1;
 export const createRenderer = (term: Terminal) => {
   const render = (state: AppState) => {
     const lines = [
-      ...renderHeaderPanel(state.inputMode, FULL_WIDTH),
+      ...renderHeaderPanel(state, FULL_WIDTH),
       ...renderStatusPanel(state, PANEL_WIDTH, FULL_WIDTH),
       ...renderKeyboardPanel(state, FULL_WIDTH),
     ];
