@@ -1,4 +1,5 @@
 import {
+  type OscMorphMode,
   PolySynth,
   type ModRoute,
   type PolySynthOptions,
@@ -13,6 +14,7 @@ const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   attack: 0.01,
   release: 0.15,
   wave: "sawtooth",
+  morphMode: "none",
   masterGain: 0.2,
   unisonVoices: 1,
   unisonDetuneCents: 0,
@@ -63,6 +65,10 @@ export class AudioEngine {
 
   setUnisonDetuneCents(value: number): void {
     this.synth.setUnisonDetuneCents(value);
+  }
+
+  setOscMorphMode(mode: OscMorphMode): void {
+    this.synth.setOscMorphMode(mode);
   }
 
   setMaxVoices(value: number): void {

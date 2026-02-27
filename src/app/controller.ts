@@ -24,10 +24,25 @@ const toggleMode = (mode: InputMode): InputMode => {
   return mode === "play" ? "nav" : "play";
 };
 
+const waveCycleOrder: readonly WaveForm[] = [
+  "sine",
+  "triangle",
+  "sawtooth",
+  "square",
+];
+
+const cycleWave = (current: WaveForm, delta: -1 | 1): WaveForm => {
+  const currentIndex = waveCycleOrder.indexOf(current);
+  if (currentIndex < 0) return waveCycleOrder[0] ?? "sine";
+  const nextIndex =
+    (currentIndex + delta + waveCycleOrder.length) % waveCycleOrder.length;
+  return waveCycleOrder[nextIndex] ?? waveCycleOrder[0] ?? "sine";
+};
+
 export const createController = (deps: ControllerDependencies) => {
   const handleKeyDown = (event: KeyboardEvent): ControllerSignal => {
     const key = event.key.toLowerCase();
-    const isUnisonDetuneKey = key === "(" || key === ")";
+    const isUnisonDetuneKey = key === "i" || key === "o";
 
     if (event.repeat && !isUnisonDetuneKey) return "none";
 
@@ -52,29 +67,29 @@ export const createController = (deps: ControllerDependencies) => {
       return "none";
     }
 
-    if (key === "[") {
+    if (key === "r") {
       deps.dispatch({ type: "octave/shift", delta: -1 });
       return "none";
     }
 
-    if (key === "]") {
+    if (key === "t") {
       deps.dispatch({ type: "octave/shift", delta: 1 });
       return "none";
     }
 
-    if (key === "{") {
+    if (key === "y") {
       deps.dispatch({ type: "unison/voices/shift", delta: -1 });
       deps.engine.setUnisonVoices(deps.getState().unisonVoices);
       return "none";
     }
 
-    if (key === "}") {
+    if (key === "u") {
       deps.dispatch({ type: "unison/voices/shift", delta: 1 });
       deps.engine.setUnisonVoices(deps.getState().unisonVoices);
       return "none";
     }
 
-    if (key === "(") {
+    if (key === "i") {
       deps.dispatch({
         type: "unison/detune/shift",
         steps: -2,
@@ -83,12 +98,38 @@ export const createController = (deps: ControllerDependencies) => {
       return "none";
     }
 
-    if (key === ")") {
+    if (key === "o") {
       deps.dispatch({
         type: "unison/detune/shift",
         steps: 2,
       });
       deps.engine.setUnisonDetuneCents(deps.getState().unisonDetuneCents);
+      return "none";
+    }
+
+    if (key === "[") {
+      deps.dispatch({ type: "osc/morph/cycle", delta: -1 });
+      deps.engine.setOscMorphMode(deps.getState().oscMorphMode);
+      return "none";
+    }
+
+    if (key === "]") {
+      deps.dispatch({ type: "osc/morph/cycle", delta: 1 });
+      deps.engine.setOscMorphMode(deps.getState().oscMorphMode);
+      return "none";
+    }
+
+    if (key === "w") {
+      const nextWave = cycleWave(deps.getState().currentWave, -1);
+      deps.engine.setWave(nextWave);
+      deps.dispatch({ type: "wave/set", wave: nextWave });
+      return "none";
+    }
+
+    if (key === "e") {
+      const nextWave = cycleWave(deps.getState().currentWave, 1);
+      deps.engine.setWave(nextWave);
+      deps.dispatch({ type: "wave/set", wave: nextWave });
       return "none";
     }
 

@@ -1,6 +1,14 @@
 import { clamp, clamp01 } from "./utils.js";
 
 export type WaveForm = "sine" | "square" | "sawtooth" | "triangle";
+export type OscMorphMode =
+  | "none"
+  | "low-pass"
+  | "high-pass"
+  | "harmonic-stretch"
+  | "formant-scale"
+  | "inharmonic-stretch"
+  | "smear";
 
 export interface PolySynthOptions {
   maxVoices: number;
@@ -10,6 +18,7 @@ export interface PolySynthOptions {
   wave: WaveForm;
   unisonVoices: number;
   unisonDetuneCents: number;
+  morphMode: OscMorphMode;
 }
 
 export interface OscillatorParams {
@@ -18,6 +27,7 @@ export interface OscillatorParams {
   phaseReset: boolean;
   unisonVoices: number;
   unisonDetuneCents: number;
+  morphMode: OscMorphMode;
 }
 
 export interface AmpEnvelopeParams {
@@ -54,6 +64,7 @@ export const DEFAULT_POLY_SYNTH_OPTIONS: PolySynthOptions = {
   wave: "sawtooth",
   unisonVoices: 1,
   unisonDetuneCents: 0,
+  morphMode: "none",
 };
 
 const clampEnvTime = (value: number): number => {
@@ -88,6 +99,7 @@ export const createPatch = (
         phaseReset: true,
         unisonVoices: clampUnisonVoices(merged.unisonVoices),
         unisonDetuneCents: clampUnisonDetuneCents(merged.unisonDetuneCents),
+        morphMode: merged.morphMode,
       },
       ampEnv: {
         attack: clampEnvTime(merged.attack),
@@ -203,6 +215,22 @@ export const withUnisonDetuneCents = (
       osc: {
         ...patch.voice.osc,
         unisonDetuneCents: clampUnisonDetuneCents(unisonDetuneCents),
+      },
+    },
+  };
+};
+
+export const withMorphMode = (
+  patch: SynthPatch,
+  morphMode: OscMorphMode,
+): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      osc: {
+        ...patch.voice.osc,
+        morphMode,
       },
     },
   };

@@ -1,4 +1,11 @@
-import { cell, divider, row, statusCell, type Tone } from "../ansi.js";
+import {
+  cell,
+  divider,
+  row,
+  statusCell,
+  statusCellWithHint,
+  type Tone,
+} from "../ansi.js";
 import type { AppState } from "../../app/types.js";
 
 const toneByWave: Record<AppState["currentWave"], Tone> = {
@@ -6,6 +13,16 @@ const toneByWave: Record<AppState["currentWave"], Tone> = {
   triangle: "green",
   sawtooth: "amber",
   square: "blue",
+};
+
+const morphLabelByMode: Record<AppState["oscMorphMode"], string> = {
+  none: "None",
+  "low-pass": "Low Pass",
+  "high-pass": "High Pass",
+  "harmonic-stretch": "Harmonic Stretch",
+  "formant-scale": "Formant Scale",
+  "inharmonic-stretch": "Inharmonic Stretch",
+  smear: "Smear",
 };
 
 export const renderStatusPanel = (
@@ -23,25 +40,28 @@ export const renderStatusPanel = (
 
   return [
     row(
-      statusCell(
+      statusCellWithHint(
         "wave",
-        `${state.currentWave} [1-4]`,
+        state.currentWave,
+        "1-4 w e",
         panelWidth,
         toneByWave[state.currentWave],
         true,
       ),
-      statusCell(
+      statusCellWithHint(
         "unison voices",
-        `${state.unisonVoices} {-+}`,
+        String(state.unisonVoices),
+        "y u",
         panelWidth,
         "pink",
       ),
     ),
     row(
-      statusCell("octave", `${octaveLabel} [-+]`, panelWidth, "cyan"),
-      statusCell(
+      statusCellWithHint("octave", octaveLabel, "r t", panelWidth, "cyan"),
+      statusCellWithHint(
         "unison detune",
-        `${unisonDetuneLabel} (-+)`,
+        unisonDetuneLabel,
+        "i o",
         panelWidth,
         "blue",
       ),
@@ -53,7 +73,13 @@ export const renderStatusPanel = (
         panelWidth,
         "green",
       ),
-      emptyRightCell,
+      statusCellWithHint(
+        "morph",
+        morphLabelByMode[state.oscMorphMode],
+        "[ ]",
+        panelWidth,
+        "cyan",
+      ),
     ),
     row(
       statusCell("active midi", activeNotes, panelWidth, "amber"),

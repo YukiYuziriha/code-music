@@ -1,10 +1,11 @@
 import {
   createVoiceBlocks,
+  type MorphChain,
   scheduleAmpAttack,
   scheduleAmpRelease,
   unisonGainScale,
 } from "./blocks.js";
-import type { SynthPatch, WaveForm } from "./params.js";
+import type { OscMorphMode, SynthPatch, WaveForm } from "./params.js";
 import { clamp01 } from "./utils.js";
 
 interface SynthVoiceOptions {
@@ -25,6 +26,7 @@ export class SynthVoice {
   private patch: SynthPatch;
   private readonly velocity: number;
   private readonly oscs: OscillatorNode[];
+  private readonly morph: MorphChain;
   private readonly amp: GainNode;
   private readonly onEnded: (midi: number) => void;
   private state: VoiceState = "idle";
@@ -44,6 +46,7 @@ export class SynthVoice {
     });
 
     this.oscs = blocks.oscs;
+    this.morph = blocks.morph;
     this.amp = blocks.amp;
 
     const leadOsc = this.oscs[0];
@@ -137,6 +140,21 @@ export class SynthVoice {
         this.patch.voice.osc.detuneCents + normalized * unisonDetuneCents;
       this.oscs[index]?.detune.setValueAtTime(detune, now);
     }
+  }
+
+  setMorphMode(mode: OscMorphMode): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        osc: {
+          ...this.patch.voice.osc,
+          morphMode: mode,
+        },
+      },
+    };
+
+    this.morph.setMode(mode, this.ctx.currentTime);
   }
 
   private stopAt(time: number): void {

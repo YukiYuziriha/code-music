@@ -6,10 +6,12 @@ import {
   withAttack,
   withMasterGain,
   withMaxVoices,
+  withMorphMode,
   withRelease,
   withUnisonDetuneCents,
   withUnisonVoices,
   withWave,
+  type OscMorphMode,
   type PolySynthOptions,
   type SynthPatch,
   type WaveForm,
@@ -17,7 +19,12 @@ import {
 import { clamp01 } from "./utils.js";
 import { SynthVoice } from "./voice.js";
 
-export type { PolySynthOptions, SynthPatch, WaveForm } from "./params.js";
+export type {
+  OscMorphMode,
+  PolySynthOptions,
+  SynthPatch,
+  WaveForm,
+} from "./params.js";
 export type { ModRoute } from "./matrix.js";
 
 export class PolySynth {
@@ -76,6 +83,13 @@ export class PolySynth {
     this.patch = withUnisonDetuneCents(this.patch, value);
     this.voices.forEachVoice((voice) => {
       voice.setUnisonDetuneCents(this.patch.voice.osc.unisonDetuneCents);
+    });
+  }
+
+  setOscMorphMode(mode: OscMorphMode): void {
+    this.patch = withMorphMode(this.patch, mode);
+    this.voices.forEachVoice((voice) => {
+      voice.setMorphMode(mode);
     });
   }
 

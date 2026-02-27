@@ -43,3 +43,29 @@
 - Mono/legato/glide voice behavior for bass
 - Saturation/clip stage for weight and character
 - Clean gain staging and anti-aliasing-minded oscillator/filter behavior
+
+## Oscillator Spectral Morph Modes (Priority by Impact)
+
+### Must-Have (High impact, high production use)
+
+- Low Pass
+- High Pass
+- Formant Scale
+- Harmonic Stretch
+
+### Strong Add (Medium-high impact)
+
+- Inharmonic Stretch
+- Smear
+- Phase Disperse
+
+### Nice-to-Have (Medium impact, style-dependent)
+
+- Vocode
+- Random Amplitudes
+- Shepard Tone
+
+### Coverage / Meh (Lower day-to-day use)
+
+- Spectral Time Skew
+- None

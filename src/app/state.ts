@@ -1,6 +1,7 @@
 import type { AppAction } from "./actions.js";
 import { keyToSemitone } from "./keymap.js";
 import { BASE_MIDI, type AppState } from "./types.js";
+import type { OscMorphMode } from "../synth/polySynth.js";
 
 const clampOctave = (value: number) => {
   return Math.max(-4, Math.min(4, value));
@@ -16,6 +17,28 @@ const clampUnisonDetune = (value: number) => {
 
 const DEFAULT_UNISON_DETUNE_STEP_CENTS = 1;
 
+const oscMorphModes: readonly OscMorphMode[] = [
+  "none",
+  "low-pass",
+  "high-pass",
+  "harmonic-stretch",
+  "formant-scale",
+  "inharmonic-stretch",
+  "smear",
+];
+const defaultOscMorphMode: OscMorphMode = "none";
+
+const cycleOscMorphMode = (
+  current: OscMorphMode,
+  delta: -1 | 1,
+): OscMorphMode => {
+  const currentIndex = oscMorphModes.indexOf(current);
+  if (currentIndex < 0) return defaultOscMorphMode;
+  const nextIndex =
+    (currentIndex + delta + oscMorphModes.length) % oscMorphModes.length;
+  return oscMorphModes[nextIndex] ?? defaultOscMorphMode;
+};
+
 export const createInitialState = (): AppState => {
   return {
     activeKeys: new Map<string, number>(),
@@ -24,6 +47,7 @@ export const createInitialState = (): AppState => {
     currentWave: "sawtooth",
     unisonVoices: 1,
     unisonDetuneCents: 0,
+    oscMorphMode: defaultOscMorphMode,
     inputMode: "play",
     lastNavAction: "none",
   };
@@ -65,6 +89,12 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
           state.unisonDetuneCents +
             action.steps * DEFAULT_UNISON_DETUNE_STEP_CENTS,
         ),
+      };
+    }
+    case "osc/morph/cycle": {
+      return {
+        ...state,
+        oscMorphMode: cycleOscMorphMode(state.oscMorphMode, action.delta),
       };
     }
     case "wave/set": {

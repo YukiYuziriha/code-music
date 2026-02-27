@@ -40,6 +40,29 @@ export const statusCell = (
   return cell(`${label.toUpperCase()}  ${value}`, width, tone, bold);
 };
 
+export const statusCellWithHint = (
+  label: string,
+  value: string,
+  hint: string,
+  width: number,
+  tone: Tone,
+  bold = false,
+) => {
+  const contentWidth = Math.max(0, width - 2);
+  const hintText = hint.trim();
+
+  if (hintText.length === 0) {
+    return statusCell(label, value, width, tone, bold);
+  }
+
+  const leftWidth = Math.max(0, contentWidth - hintText.length - 1);
+  const left = clip(`${label.toUpperCase()}  ${value}`, leftWidth).padEnd(
+    leftWidth,
+    " ",
+  );
+  return paint(` ${left} ${hintText} `, tone, bold);
+};
+
 export const keyCell = (key: string, pressed: boolean) => {
   return pressed
     ? paint(` ${key.toUpperCase()} `, "amber", true)
