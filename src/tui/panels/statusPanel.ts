@@ -77,15 +77,24 @@ const getCellHint = (
   isBlockFocused: boolean,
 ): string => {
   if (!isBlockFocused) return "";
+  if (state.matrixMode !== "idle") return "";
 
+  return CELL_SHORTCUTS[cellIndex]?.hint ?? "";
+};
+
+const getBlockHeaderHint = (
+  state: AppState,
+  blockId: BlockId,
+  isFocused: boolean,
+): string => {
+  if (!isFocused) return "";
   if (state.matrixMode === "pick-block") {
-    return blockId === state.matrixSelection?.targetBlock ? "enter" : "h l";
+    return blockId === state.matrixSelection?.targetBlock ? "h l enter" : "";
   }
   if (state.matrixMode === "pick-cell") {
     return blockId === state.matrixSelection?.targetBlock ? "j k enter" : "";
   }
-
-  return CELL_SHORTCUTS[cellIndex]?.hint ?? "";
+  return "";
 };
 
 const isLinkedByCurrentSource = (
@@ -109,19 +118,12 @@ const getCellTone = (
   index: number,
 ): { tone: Tone; bold: boolean } => {
   const isBlockFocused = state.selectedBlock === blockId;
-  const isSelectedCell =
-    state.inputMode === "nav" &&
-    state.matrixMode === "idle" &&
-    isBlockFocused &&
-    state.selectedCellByBlock[blockId] === index;
-
   const isMatrixTargetCell =
     state.matrixMode === "pick-cell" &&
     blockId === state.matrixSelection?.targetBlock &&
     state.matrixSelection.targetCellIndex === index;
 
   if (isMatrixTargetCell) return { tone: "pink", bold: true };
-  if (isSelectedCell) return { tone: "cyan", bold: true };
   if (isLinkedByCurrentSource(state, cellId, blockId)) {
     return { tone: "green", bold: false };
   }
@@ -139,6 +141,7 @@ const renderBlockColumn = (
   const cells = getBlockCells(blockId);
   const isFocused = state.selectedBlock === blockId;
   const titleText = blockId === "osc" ? "OSCILLATOR" : "ENVELOPE";
+  const titleHint = getBlockHeaderHint(state, blockId, isFocused);
 
   const rows = cells.map((cellMeta, index) => {
     if (cellMeta.id.endsWith(".empty")) {
@@ -154,7 +157,16 @@ const renderBlockColumn = (
   });
 
   return [
-    cell(titleText, panelWidth, isFocused ? "pink" : "gray", true),
+    titleHint.length > 0
+      ? statusCellWithHint(
+          "",
+          titleText,
+          titleHint,
+          panelWidth,
+          isFocused ? "pink" : "gray",
+          true,
+        )
+      : cell(titleText, panelWidth, isFocused ? "pink" : "gray", true),
     ...rows,
   ];
 };

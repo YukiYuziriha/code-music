@@ -8,12 +8,12 @@ export interface BlockCell {
 }
 
 const OSC_CELLS: readonly BlockCell[] = [
-  { id: "osc.wave", label: "wave", shortLabel: "OSCWave", targetable: false },
+  { id: "osc.wave", label: "wave", shortLabel: "OSCWave", targetable: true },
   {
     id: "osc.octave",
     label: "octave",
     shortLabel: "OSCOct",
-    targetable: false,
+    targetable: true,
   },
   {
     id: "osc.unisonVoices",
@@ -31,7 +31,7 @@ const OSC_CELLS: readonly BlockCell[] = [
     id: "osc.morph",
     label: "morph",
     shortLabel: "OSCMorph",
-    targetable: false,
+    targetable: true,
   },
   {
     id: "osc.emptyA",

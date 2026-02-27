@@ -37,6 +37,18 @@ const cycleWave = (current: WaveForm, delta: -1 | 1): WaveForm => {
   return waveCycleOrder[nextIndex] ?? waveCycleOrder[0] ?? "sine";
 };
 
+const isRepeatableShortcutKey = (key: string): boolean => {
+  for (const shortcut of CELL_SHORTCUTS) {
+    if (shortcut === undefined) continue;
+    if (shortcut.decKey === key && key.length > 0 && key !== "enter")
+      return true;
+    if (shortcut.incKey === key && key.length > 0 && key !== "enter")
+      return true;
+  }
+
+  return false;
+};
+
 export const createController = (deps: ControllerDependencies) => {
   const syncModRoutes = (): void => {
     const routes: SynthModRoute[] = [];
@@ -176,8 +188,13 @@ export const createController = (deps: ControllerDependencies) => {
     }
 
     if (cellIndex === 6 && key === "enter") {
-      startMatrixPick();
-      return true;
+      const state = deps.getState();
+      if (state.matrixMode === "idle" && state.selectedBlock === "env") {
+        startMatrixPick();
+        return true;
+      }
+
+      return false;
     }
 
     return false;
@@ -214,6 +231,16 @@ export const createController = (deps: ControllerDependencies) => {
   };
 
   const startMatrixPick = (): void => {
+    if (deps.getState().inputMode !== "nav") {
+      deps.engine.panic();
+      deps.dispatch({ type: "panic" });
+      deps.dispatch({ type: "mode/set", mode: "nav" });
+    }
+
+    const envCells = getBlockCells("env");
+    const matrixCellIndex = envCells.findIndex(
+      (cell) => cell.id === "env.matrix",
+    );
     const oscCells = getBlockCells("osc");
     const firstTargetIndex = oscCells.findIndex((cell) => cell.targetable);
 
@@ -222,7 +249,7 @@ export const createController = (deps: ControllerDependencies) => {
       selection: {
         source: "env1",
         originBlock: "env",
-        originCellIndex: deps.getState().selectedCellByBlock.env,
+        originCellIndex: matrixCellIndex < 0 ? 0 : matrixCellIndex,
         targetBlock: "osc",
         targetCellIndex: firstTargetIndex < 0 ? 0 : firstTargetIndex,
       },
@@ -251,6 +278,7 @@ export const createController = (deps: ControllerDependencies) => {
     deps.dispatch({ type: "nav/block/select", block: selection.originBlock });
     deps.dispatch({ type: "matrix/mode/set", mode: "idle" });
     deps.dispatch({ type: "matrix/selection/set", selection: null });
+    deps.dispatch({ type: "mode/set", mode: "play" });
   };
 
   const handleNavKeyDown = (key: string): ControllerSignal => {
@@ -285,14 +313,6 @@ export const createController = (deps: ControllerDependencies) => {
       }
       if (key === "l") {
         deps.dispatch({ type: "nav/block/cycle", delta: 1 });
-        return "none";
-      }
-      if (key === "k") {
-        deps.dispatch({ type: "nav/cell/cycle", delta: -1 });
-        return "none";
-      }
-      if (key === "j") {
-        deps.dispatch({ type: "nav/cell/cycle", delta: 1 });
         return "none";
       }
       if (handleSelectedBlockShortcut(key)) {
@@ -351,8 +371,14 @@ export const createController = (deps: ControllerDependencies) => {
   const handleKeyDown = (event: KeyboardEvent): ControllerSignal => {
     const key = event.key.toLowerCase();
     const isUnisonDetuneKey = key === "i" || key === "o";
+    const isMatrixNavRepeatKey =
+      key === "h" || key === "l" || key === "j" || key === "k";
+    const shouldAllowRepeat =
+      isUnisonDetuneKey ||
+      isRepeatableShortcutKey(key) ||
+      (deps.getState().inputMode === "nav" && isMatrixNavRepeatKey);
 
-    if (event.repeat && !isUnisonDetuneKey) return "none";
+    if (event.repeat && !shouldAllowRepeat) return "none";
 
     if (key === "`") {
       const nextMode = toggleMode(deps.getState().inputMode);
