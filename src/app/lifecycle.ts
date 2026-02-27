@@ -7,19 +7,25 @@ interface LifecycleHandlers {
 }
 
 export const bindLifecycle = (handlers: LifecycleHandlers) => {
+  const keyListenerOptions: AddEventListenerOptions = { capture: true };
+
   const visibilityHandler = () => {
     handlers.onVisibilityChange(document.hidden);
   };
 
-  window.addEventListener("keydown", handlers.onKeyDown);
-  window.addEventListener("keyup", handlers.onKeyUp);
+  window.addEventListener("keydown", handlers.onKeyDown, keyListenerOptions);
+  window.addEventListener("keyup", handlers.onKeyUp, keyListenerOptions);
   window.addEventListener("blur", handlers.onBlur);
   document.addEventListener("visibilitychange", visibilityHandler);
   window.addEventListener("beforeunload", handlers.onBeforeUnload);
 
   return () => {
-    window.removeEventListener("keydown", handlers.onKeyDown);
-    window.removeEventListener("keyup", handlers.onKeyUp);
+    window.removeEventListener(
+      "keydown",
+      handlers.onKeyDown,
+      keyListenerOptions,
+    );
+    window.removeEventListener("keyup", handlers.onKeyUp, keyListenerOptions);
     window.removeEventListener("blur", handlers.onBlur);
     document.removeEventListener("visibilitychange", visibilityHandler);
     window.removeEventListener("beforeunload", handlers.onBeforeUnload);

@@ -2,6 +2,8 @@ export const ESC = "\x1b";
 export const enterAlt = `${ESC}[?1049h`;
 export const leaveAlt = `${ESC}[?1049l`;
 export const clearAndHome = `${ESC}[2J${ESC}[H`;
+export const hideCursor = `${ESC}[?25l`;
+export const showCursor = `${ESC}[?25h`;
 
 export const tokyoNightTerminalTheme = {
   background: "#1a1b26",

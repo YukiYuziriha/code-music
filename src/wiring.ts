@@ -10,13 +10,15 @@ import {
   enterAlt,
   leaveAlt,
   clearAndHome,
+  hideCursor,
+  showCursor,
   tokyoNightTerminalTheme,
 } from "./tui/theme.js";
 
 const term = new Terminal({
   cols: 120,
   rows: 32,
-  cursorBlink: true,
+  cursorBlink: false,
   theme: tokyoNightTerminalTheme,
 });
 
@@ -50,10 +52,12 @@ const controller = createController({
 
 const enterAppScreen = (): void => {
   term.write(enterAlt);
+  term.write(hideCursor);
   term.write(clearAndHome);
 };
 
 const leaveAppScreen = (): void => {
+  term.write(showCursor);
   term.write(leaveAlt);
 };
 

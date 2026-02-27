@@ -1,4 +1,4 @@
-import { divider, row, statusCell, type Tone } from "../ansi.js";
+import { cell, divider, row, statusCell, type Tone } from "../ansi.js";
 import type { AppState } from "../../app/types.js";
 
 const toneByWave: Record<AppState["currentWave"], Tone> = {
@@ -18,6 +18,8 @@ export const renderStatusPanel = (
       ? Array.from(state.activeKeys.values()).join(" ")
       : "none";
   const octaveLabel = `${state.octaveOffset >= 0 ? "+" : ""}${state.octaveOffset}`;
+  const unisonDetuneLabel = `${state.unisonDetuneCents.toFixed(1)}c`;
+  const emptyRightCell = cell("", panelWidth, "gray");
 
   return [
     row(
@@ -28,11 +30,34 @@ export const renderStatusPanel = (
         toneByWave[state.currentWave],
         true,
       ),
-      statusCell("octave", `${octaveLabel} [-+]`, panelWidth, "cyan"),
+      statusCell(
+        "unison voices",
+        `${state.unisonVoices} {-+}`,
+        panelWidth,
+        "pink",
+      ),
     ),
     row(
-      statusCell("voices", String(state.activeKeys.size), panelWidth, "green"),
+      statusCell("octave", `${octaveLabel} [-+]`, panelWidth, "cyan"),
+      statusCell(
+        "unison detune",
+        `${unisonDetuneLabel} (-+)`,
+        panelWidth,
+        "blue",
+      ),
+    ),
+    row(
+      statusCell(
+        "active voices",
+        String(state.activeKeys.size),
+        panelWidth,
+        "green",
+      ),
+      emptyRightCell,
+    ),
+    row(
       statusCell("active midi", activeNotes, panelWidth, "amber"),
+      emptyRightCell,
     ),
     divider(fullWidth),
   ];

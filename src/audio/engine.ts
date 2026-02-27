@@ -14,6 +14,8 @@ const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   release: 0.15,
   wave: "sawtooth",
   masterGain: 0.2,
+  unisonVoices: 1,
+  unisonDetuneCents: 0,
 };
 
 export class AudioEngine {
@@ -53,6 +55,14 @@ export class AudioEngine {
 
   setRelease(value: number): void {
     this.synth.setRelease(value);
+  }
+
+  setUnisonVoices(value: number): void {
+    this.synth.setUnisonVoices(value);
+  }
+
+  setUnisonDetuneCents(value: number): void {
+    this.synth.setUnisonDetuneCents(value);
   }
 
   setMaxVoices(value: number): void {

@@ -27,8 +27,9 @@ const toggleMode = (mode: InputMode): InputMode => {
 export const createController = (deps: ControllerDependencies) => {
   const handleKeyDown = (event: KeyboardEvent): ControllerSignal => {
     const key = event.key.toLowerCase();
+    const isUnisonDetuneKey = key === "(" || key === ")";
 
-    if (event.repeat) return "none";
+    if (event.repeat && !isUnisonDetuneKey) return "none";
 
     if (key === "escape") {
       return "quit";
@@ -58,6 +59,36 @@ export const createController = (deps: ControllerDependencies) => {
 
     if (key === "]") {
       deps.dispatch({ type: "octave/shift", delta: 1 });
+      return "none";
+    }
+
+    if (key === "{") {
+      deps.dispatch({ type: "unison/voices/shift", delta: -1 });
+      deps.engine.setUnisonVoices(deps.getState().unisonVoices);
+      return "none";
+    }
+
+    if (key === "}") {
+      deps.dispatch({ type: "unison/voices/shift", delta: 1 });
+      deps.engine.setUnisonVoices(deps.getState().unisonVoices);
+      return "none";
+    }
+
+    if (key === "(") {
+      deps.dispatch({
+        type: "unison/detune/shift",
+        steps: -2,
+      });
+      deps.engine.setUnisonDetuneCents(deps.getState().unisonDetuneCents);
+      return "none";
+    }
+
+    if (key === ")") {
+      deps.dispatch({
+        type: "unison/detune/shift",
+        steps: 2,
+      });
+      deps.engine.setUnisonDetuneCents(deps.getState().unisonDetuneCents);
       return "none";
     }
 

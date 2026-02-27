@@ -8,6 +8,8 @@ export interface AppState {
   readonly baseMidi: number;
   readonly octaveOffset: number;
   readonly currentWave: WaveForm;
+  readonly unisonVoices: number;
+  readonly unisonDetuneCents: number;
   readonly inputMode: InputMode;
   readonly lastNavAction: NavAction;
 }

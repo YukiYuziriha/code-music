@@ -2,6 +2,7 @@ import {
   createVoiceBlocks,
   scheduleAmpAttack,
   scheduleAmpRelease,
+  unisonGainScale,
 } from "./blocks.js";
 import type { SynthPatch, WaveForm } from "./params.js";
 import { clamp01 } from "./utils.js";
@@ -20,15 +21,17 @@ type VoiceState = "idle" | "active" | "released" | "stopped";
 export class SynthVoice {
   readonly midi: number;
 
+  private readonly ctx: AudioContext;
   private patch: SynthPatch;
   private readonly velocity: number;
-  private readonly osc: OscillatorNode;
+  private readonly oscs: OscillatorNode[];
   private readonly amp: GainNode;
   private readonly onEnded: (midi: number) => void;
   private state: VoiceState = "idle";
 
   constructor(options: SynthVoiceOptions) {
     this.midi = options.midi;
+    this.ctx = options.ctx;
     this.patch = options.patch;
     this.velocity = clamp01(options.velocity);
     this.onEnded = options.onEnded;
@@ -40,13 +43,20 @@ export class SynthVoice {
       output: options.output,
     });
 
-    this.osc = blocks.osc;
+    this.oscs = blocks.oscs;
     this.amp = blocks.amp;
 
-    this.osc.onended = () => {
+    const leadOsc = this.oscs[0];
+    if (!leadOsc) {
+      throw new Error("voice created without oscillators");
+    }
+
+    leadOsc.onended = () => {
       if (this.state === "stopped") return;
       this.state = "stopped";
-      this.osc.disconnect();
+      for (const osc of this.oscs) {
+        osc.disconnect();
+      }
       this.amp.disconnect();
       this.onEnded(this.midi);
     };
@@ -58,10 +68,12 @@ export class SynthVoice {
     scheduleAmpAttack(
       this.amp,
       now,
-      this.velocity,
+      this.velocity * unisonGainScale(this.patch.voice.osc.unisonVoices),
       this.patch.voice.ampEnv.attack,
     );
-    this.osc.start(now);
+    for (const osc of this.oscs) {
+      osc.start(now);
+    }
     this.state = "active";
   }
 
@@ -97,14 +109,43 @@ export class SynthVoice {
         },
       },
     };
-    this.osc.type = wave;
+    for (const osc of this.oscs) {
+      osc.type = wave;
+    }
+  }
+
+  setUnisonDetuneCents(unisonDetuneCents: number): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        osc: {
+          ...this.patch.voice.osc,
+          unisonDetuneCents,
+        },
+      },
+    };
+
+    const count = this.oscs.length;
+    const center = (count - 1) / 2;
+    const scale = center === 0 ? 0 : 1 / center;
+    const now = this.ctx.currentTime;
+
+    for (let index = 0; index < count; index += 1) {
+      const normalized = (index - center) * scale;
+      const detune =
+        this.patch.voice.osc.detuneCents + normalized * unisonDetuneCents;
+      this.oscs[index]?.detune.setValueAtTime(detune, now);
+    }
   }
 
   private stopAt(time: number): void {
-    try {
-      this.osc.stop(time);
-    } catch {
-      return;
+    for (const osc of this.oscs) {
+      try {
+        osc.stop(time);
+      } catch {
+        continue;
+      }
     }
   }
 }

@@ -7,6 +7,8 @@ import {
   withMasterGain,
   withMaxVoices,
   withRelease,
+  withUnisonDetuneCents,
+  withUnisonVoices,
   withWave,
   type PolySynthOptions,
   type SynthPatch,
@@ -64,6 +66,17 @@ export class PolySynth {
 
   setRelease(value: number): void {
     this.patch = withRelease(this.patch, value);
+  }
+
+  setUnisonVoices(value: number): void {
+    this.patch = withUnisonVoices(this.patch, value);
+  }
+
+  setUnisonDetuneCents(value: number): void {
+    this.patch = withUnisonDetuneCents(this.patch, value);
+    this.voices.forEachVoice((voice) => {
+      voice.setUnisonDetuneCents(this.patch.voice.osc.unisonDetuneCents);
+    });
   }
 
   setMaxVoices(value: number): void {

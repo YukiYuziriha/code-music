@@ -9,25 +9,57 @@ interface VoiceBlockInput {
 }
 
 export interface VoiceBlocks {
-  osc: OscillatorNode;
+  oscs: OscillatorNode[];
   amp: GainNode;
 }
 
+const buildUnisonDetuneOffsets = (
+  unisonVoices: number,
+  unisonDetuneCents: number,
+): number[] => {
+  if (unisonVoices <= 1 || unisonDetuneCents <= 0) {
+    return [0];
+  }
+
+  const center = (unisonVoices - 1) / 2;
+  const scale = center === 0 ? 0 : 1 / center;
+  const offsets: number[] = [];
+
+  for (let index = 0; index < unisonVoices; index += 1) {
+    const normalized = (index - center) * scale;
+    offsets.push(normalized * unisonDetuneCents);
+  }
+
+  return offsets;
+};
+
+export const unisonGainScale = (unisonVoices: number): number => {
+  if (unisonVoices <= 1) return 1;
+  return 1 / Math.sqrt(unisonVoices);
+};
+
 export const createVoiceBlocks = (input: VoiceBlockInput): VoiceBlocks => {
-  const osc = input.ctx.createOscillator();
   const amp = input.ctx.createGain();
 
-  osc.type = input.patch.voice.osc.wave;
-  osc.frequency.setValueAtTime(midiToHz(input.midi), input.ctx.currentTime);
-  osc.detune.setValueAtTime(
-    input.patch.voice.osc.detuneCents,
-    input.ctx.currentTime,
+  const detuneOffsets = buildUnisonDetuneOffsets(
+    input.patch.voice.osc.unisonVoices,
+    input.patch.voice.osc.unisonDetuneCents,
   );
+  const oscs = detuneOffsets.map((detuneOffset) => {
+    const osc = input.ctx.createOscillator();
+    osc.type = input.patch.voice.osc.wave;
+    osc.frequency.setValueAtTime(midiToHz(input.midi), input.ctx.currentTime);
+    osc.detune.setValueAtTime(
+      input.patch.voice.osc.detuneCents + detuneOffset,
+      input.ctx.currentTime,
+    );
+    osc.connect(amp);
+    return osc;
+  });
 
-  osc.connect(amp);
   amp.connect(input.output);
 
-  return { osc, amp };
+  return { oscs, amp };
 };
 
 export const scheduleAmpAttack = (

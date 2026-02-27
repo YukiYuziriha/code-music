@@ -8,12 +8,16 @@ export interface PolySynthOptions {
   release: number;
   masterGain: number;
   wave: WaveForm;
+  unisonVoices: number;
+  unisonDetuneCents: number;
 }
 
 export interface OscillatorParams {
   wave: WaveForm;
   detuneCents: number;
   phaseReset: boolean;
+  unisonVoices: number;
+  unisonDetuneCents: number;
 }
 
 export interface AmpEnvelopeParams {
@@ -38,7 +42,9 @@ export interface SynthPatch {
 
 const MIN_VOICES = 1;
 const MAX_VOICES = 64;
+const MAX_UNISON_VOICES = 16;
 const MAX_ENV_SECONDS = 8;
+const MAX_UNISON_DETUNE_CENTS = 100;
 
 export const DEFAULT_POLY_SYNTH_OPTIONS: PolySynthOptions = {
   maxVoices: 8,
@@ -46,6 +52,8 @@ export const DEFAULT_POLY_SYNTH_OPTIONS: PolySynthOptions = {
   release: 0.15,
   masterGain: 0.2,
   wave: "sawtooth",
+  unisonVoices: 1,
+  unisonDetuneCents: 0,
 };
 
 const clampEnvTime = (value: number): number => {
@@ -54,6 +62,14 @@ const clampEnvTime = (value: number): number => {
 
 const clampMaxVoices = (value: number): number => {
   return Math.floor(clamp(value, MIN_VOICES, MAX_VOICES));
+};
+
+const clampUnisonVoices = (value: number): number => {
+  return Math.floor(clamp(value, 1, MAX_UNISON_VOICES));
+};
+
+const clampUnisonDetuneCents = (value: number): number => {
+  return clamp(value, 0, MAX_UNISON_DETUNE_CENTS);
 };
 
 export const createPatch = (
@@ -70,6 +86,8 @@ export const createPatch = (
         wave: merged.wave,
         detuneCents: 0,
         phaseReset: true,
+        unisonVoices: clampUnisonVoices(merged.unisonVoices),
+        unisonDetuneCents: clampUnisonDetuneCents(merged.unisonDetuneCents),
       },
       ampEnv: {
         attack: clampEnvTime(merged.attack),
@@ -153,6 +171,38 @@ export const withRelease = (patch: SynthPatch, release: number): SynthPatch => {
       ampEnv: {
         ...patch.voice.ampEnv,
         release: clampEnvTime(release),
+      },
+    },
+  };
+};
+
+export const withUnisonVoices = (
+  patch: SynthPatch,
+  unisonVoices: number,
+): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      osc: {
+        ...patch.voice.osc,
+        unisonVoices: clampUnisonVoices(unisonVoices),
+      },
+    },
+  };
+};
+
+export const withUnisonDetuneCents = (
+  patch: SynthPatch,
+  unisonDetuneCents: number,
+): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      osc: {
+        ...patch.voice.osc,
+        unisonDetuneCents: clampUnisonDetuneCents(unisonDetuneCents),
       },
     },
   };

@@ -3,8 +3,18 @@ import { keyToSemitone } from "./keymap.js";
 import { BASE_MIDI, type AppState } from "./types.js";
 
 const clampOctave = (value: number) => {
-  return Math.max(-2, Math.min(2, value));
+  return Math.max(-4, Math.min(4, value));
 };
+
+const clampUnisonVoices = (value: number) => {
+  return Math.max(1, Math.min(16, Math.floor(value)));
+};
+
+const clampUnisonDetune = (value: number) => {
+  return Math.max(0, Math.min(50, value));
+};
+
+const DEFAULT_UNISON_DETUNE_STEP_CENTS = 1;
 
 export const createInitialState = (): AppState => {
   return {
@@ -12,6 +22,8 @@ export const createInitialState = (): AppState => {
     baseMidi: BASE_MIDI,
     octaveOffset: 0,
     currentWave: "sawtooth",
+    unisonVoices: 1,
+    unisonDetuneCents: 0,
     inputMode: "play",
     lastNavAction: "none",
   };
@@ -38,6 +50,21 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
       return {
         ...state,
         octaveOffset: clampOctave(state.octaveOffset + action.delta),
+      };
+    }
+    case "unison/voices/shift": {
+      return {
+        ...state,
+        unisonVoices: clampUnisonVoices(state.unisonVoices + action.delta),
+      };
+    }
+    case "unison/detune/shift": {
+      return {
+        ...state,
+        unisonDetuneCents: clampUnisonDetune(
+          state.unisonDetuneCents +
+            action.steps * DEFAULT_UNISON_DETUNE_STEP_CENTS,
+        ),
       };
     }
     case "wave/set": {
