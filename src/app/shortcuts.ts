@@ -14,3 +14,14 @@ export const CELL_SHORTCUTS: readonly CellShortcut[] = [
   { decKey: "enter", incKey: "enter", hint: "enter" },
   { decKey: "", incKey: "", hint: "" },
 ];
+
+export const LFO_CELL_SHORTCUTS: readonly CellShortcut[] = [
+  { decKey: "w", incKey: "e", hint: "w e" },
+  { decKey: "r", incKey: "t", hint: "r t" },
+  { decKey: "y", incKey: "u", hint: "y u" },
+  { decKey: "", incKey: "", hint: "` edit" },
+  { decKey: "", incKey: "", hint: "" },
+  { decKey: "", incKey: "", hint: "" },
+  { decKey: "enter", incKey: "enter", hint: "enter" },
+  { decKey: "", incKey: "", hint: "" },
+];

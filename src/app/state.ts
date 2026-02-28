@@ -36,6 +36,12 @@ const clampEnvSustain = (value: number): number => {
 const DEFAULT_UNISON_DETUNE_STEP_CENTS = 1;
 const DEFAULT_ENV_TIME_STEP = 0.01;
 const DEFAULT_ENV_SUSTAIN_STEP = 0.02;
+const DEFAULT_LFO_RATE_STEP_HZ = 0.1;
+const DEFAULT_LFO_PHASE_STEP = 0.02;
+const DEFAULT_LFO_POINT_X_STEP = 0.02;
+const DEFAULT_LFO_POINT_Y_STEP = 0.05;
+const MIN_LFO_POINTS = 2;
+const MIN_POINT_SPACING = 0.02;
 
 const clamp01 = (value: number): number => {
   return clamp(value, 0, 1);
@@ -80,6 +86,11 @@ const oscMorphModes: readonly OscMorphMode[] = [
   "smear",
 ];
 const defaultOscMorphMode: OscMorphMode = "none";
+const lfoModes: readonly AppState["lfo"]["mode"][] = [
+  "trigger",
+  "sync",
+  "envelope",
+];
 
 const cycleOscMorphMode = (
   current: OscMorphMode,
@@ -90,6 +101,33 @@ const cycleOscMorphMode = (
   const nextIndex =
     (currentIndex + delta + oscMorphModes.length) % oscMorphModes.length;
   return oscMorphModes[nextIndex] ?? defaultOscMorphMode;
+};
+
+const cycleLfoMode = (
+  current: AppState["lfo"]["mode"],
+  delta: -1 | 1,
+): AppState["lfo"]["mode"] => {
+  const currentIndex = lfoModes.indexOf(current);
+  if (currentIndex < 0) return "trigger";
+  const nextIndex = (currentIndex + delta + lfoModes.length) % lfoModes.length;
+  return lfoModes[nextIndex] ?? "trigger";
+};
+
+const cycleIndex = (current: number, count: number, delta: -1 | 1): number => {
+  if (count <= 0) return 0;
+  return (current + delta + count) % count;
+};
+
+const clampLfoRateHz = (value: number): number => {
+  return clamp(value, 0.01, 64);
+};
+
+const clampLfoPhaseOffset = (value: number): number => {
+  return clamp(value, 0, 1);
+};
+
+const clampLfoY = (value: number): number => {
+  return clamp(value, -1, 1);
 };
 
 const cycleBlock = (current: BlockId, delta: -1 | 1): BlockId => {
@@ -126,9 +164,95 @@ const cycleTargetableCellIndex = (
   return current;
 };
 
+const hasTargetableCell = (block: BlockId): boolean => {
+  return getBlockCells(block).some((cell) => cell.targetable);
+};
+
+const cycleTargetableBlock = (current: BlockId, delta: -1 | 1): BlockId => {
+  let block = current;
+  for (let i = 0; i < BLOCK_ORDER.length; i += 1) {
+    block = cycleBlock(block, delta);
+    if (hasTargetableCell(block)) return block;
+  }
+  return current;
+};
+
+const moveSelectedLfoPoint = (
+  state: AppState,
+  dx: number,
+  dy: number,
+): AppState => {
+  const points = state.lfo.points.slice();
+  const index = state.lfo.selectedPointIndex;
+  const point = points[index];
+  if (point === undefined) return state;
+
+  const isFirst = index === 0;
+  const isLast = index === points.length - 1;
+  const prevX = points[index - 1]?.x ?? 0;
+  const nextX = points[index + 1]?.x ?? 1;
+  const minX = isFirst ? 0 : prevX + MIN_POINT_SPACING;
+  const maxX = isLast ? 1 : nextX - MIN_POINT_SPACING;
+
+  const nextPoint = {
+    x: isFirst || isLast ? point.x : clamp(point.x + dx, minX, maxX),
+    y: clampLfoY(point.y + dy),
+  };
+  points[index] = nextPoint;
+
+  return {
+    ...state,
+    lfo: {
+      ...state.lfo,
+      points,
+    },
+  };
+};
+
+const addLfoPointToRight = (state: AppState): AppState => {
+  const points = state.lfo.points;
+  const index = state.lfo.selectedPointIndex;
+  const left = points[index];
+  const right = points[index + 1];
+  if (left === undefined || right === undefined) return state;
+
+  const x = (left.x + right.x) * 0.5;
+  if (right.x - left.x < MIN_POINT_SPACING * 2) return state;
+  const y = (left.y + right.y) * 0.5;
+
+  const nextPoints = points.slice();
+  nextPoints.splice(index + 1, 0, { x, y });
+  return {
+    ...state,
+    lfo: {
+      ...state.lfo,
+      points: nextPoints,
+      selectedPointIndex: index + 1,
+    },
+  };
+};
+
+const removeSelectedLfoPoint = (state: AppState): AppState => {
+  const points = state.lfo.points;
+  const index = state.lfo.selectedPointIndex;
+  if (points.length <= MIN_LFO_POINTS) return state;
+  if (index <= 0 || index >= points.length - 1) return state;
+
+  const nextPoints = points.slice();
+  nextPoints.splice(index, 1);
+  return {
+    ...state,
+    lfo: {
+      ...state.lfo,
+      points: nextPoints,
+      selectedPointIndex: Math.max(0, index - 1),
+    },
+  };
+};
+
 const hasRoute = (
   routes: readonly ModRoute[],
-  source: "env1",
+  source: "env1" | "lfo1",
   target: ModRoute["target"],
 ): boolean => {
   return routes.some(
@@ -153,11 +277,25 @@ export const createInitialState = (): AppState => {
       sustain: 0.8,
       release: 0.15,
     },
+    lfo: {
+      mode: "trigger",
+      rateHz: 2,
+      phaseOffset: 0,
+      points: [
+        { x: 0, y: 0 },
+        { x: 0.25, y: 1 },
+        { x: 0.5, y: 0 },
+        { x: 0.75, y: -1 },
+        { x: 1, y: 0 },
+      ],
+      selectedPointIndex: 0,
+    },
     inputMode: "play",
     selectedBlock: "osc",
     selectedCellByBlock: {
       osc: 0,
       env: 0,
+      lfo: 0,
     },
     matrixMode: "idle",
     matrixSelection: null,
@@ -228,7 +366,7 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
     }
     case "matrix/target/block/cycle": {
       if (state.matrixSelection === null) return state;
-      const nextTargetBlock = cycleBlock(
+      const nextTargetBlock = cycleTargetableBlock(
         state.matrixSelection.targetBlock,
         action.delta,
       );
@@ -381,6 +519,63 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
         },
       };
     }
+    case "lfo/rate/shift": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          rateHz: clampLfoRateHz(
+            state.lfo.rateHz + action.delta * DEFAULT_LFO_RATE_STEP_HZ,
+          ),
+        },
+      };
+    }
+    case "lfo/phase/shift": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          phaseOffset: clampLfoPhaseOffset(
+            state.lfo.phaseOffset + action.delta * DEFAULT_LFO_PHASE_STEP,
+          ),
+        },
+      };
+    }
+    case "lfo/mode/cycle": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          mode: cycleLfoMode(state.lfo.mode, action.delta),
+        },
+      };
+    }
+    case "lfo/point/select/cycle": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          selectedPointIndex: cycleIndex(
+            state.lfo.selectedPointIndex,
+            state.lfo.points.length,
+            action.delta,
+          ),
+        },
+      };
+    }
+    case "lfo/point/add/right": {
+      return addLfoPointToRight(state);
+    }
+    case "lfo/point/remove": {
+      return removeSelectedLfoPoint(state);
+    }
+    case "lfo/point/move": {
+      return moveSelectedLfoPoint(
+        state,
+        action.dx * DEFAULT_LFO_POINT_X_STEP,
+        action.dy * DEFAULT_LFO_POINT_Y_STEP,
+      );
+    }
     case "wave/set": {
       return { ...state, currentWave: action.wave };
     }
@@ -437,6 +632,8 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
         },
       };
     }
+    default:
+      return state;
   }
 };
 

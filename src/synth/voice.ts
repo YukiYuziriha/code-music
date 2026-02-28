@@ -5,9 +5,16 @@ import {
   scheduleAmpRelease,
   unisonGainScale,
 } from "./blocks.js";
+import { getLfoPhaseAtTime, sampleLfoShape } from "./lfo.js";
 import type { ModRoute } from "./matrix.js";
 import { resolveTargetValue } from "./modulation.js";
-import type { OscMorphMode, SynthPatch, WaveForm } from "./params.js";
+import type {
+  LfoMode,
+  LfoPoint,
+  OscMorphMode,
+  SynthPatch,
+  WaveForm,
+} from "./params.js";
 import { clamp01, midiToHz } from "./utils.js";
 
 interface SynthVoiceOptions {
@@ -247,6 +254,69 @@ export class SynthVoice {
     this.refreshModulation(now);
   }
 
+  setLfoMode(mode: LfoMode, now: number): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          mode,
+        },
+      },
+    };
+
+    if (mode !== "sync") {
+      this.noteOnTime = now;
+    }
+    this.refreshModulation(now);
+  }
+
+  setLfoRateHz(rateHz: number): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          rateHz,
+        },
+      },
+    };
+
+    this.refreshModulation(this.ctx.currentTime);
+  }
+
+  setLfoPhaseOffset(phaseOffset: number): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          phaseOffset,
+        },
+      },
+    };
+
+    this.refreshModulation(this.ctx.currentTime);
+  }
+
+  setLfoPoints(points: readonly LfoPoint[]): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          points,
+        },
+      },
+    };
+
+    this.refreshModulation(this.ctx.currentTime);
+  }
+
   setMorphMode(mode: OscMorphMode): void {
     this.patch = {
       ...this.patch,
@@ -299,18 +369,19 @@ export class SynthVoice {
     if (this.state === "stopped") return;
 
     const envValue = this.getEnvLevelAt(now);
+    const lfoValue = this.getLfoLevelAt(now);
     const targetDetune = resolveTargetValue(
       this.modRoutes,
       "osc.unisonDetuneCents",
       this.patch.voice.osc.unisonDetuneCents,
-      { env1: envValue },
+      { env1: envValue, lfo1: lfoValue },
     );
     const targetVoices = Math.round(
       resolveTargetValue(
         this.modRoutes,
         "osc.unisonVoices",
         this.patch.voice.osc.unisonVoices,
-        { env1: envValue },
+        { env1: envValue, lfo1: lfoValue },
       ),
     );
 
@@ -321,6 +392,19 @@ export class SynthVoice {
     }
 
     this.currentModUnisonDetune = targetDetune;
+  }
+
+  private getLfoLevelAt(now: number): number {
+    const lfo = this.patch.voice.lfo;
+    const phase = getLfoPhaseAtTime(
+      lfo.mode,
+      lfo.rateHz,
+      lfo.phaseOffset,
+      now,
+      this.noteOnTime,
+    );
+    const bipolar = sampleLfoShape(lfo.points, phase);
+    return clamp((bipolar + 1) * 0.5, 0, 1);
   }
 
   private rebuildUnisonStack(

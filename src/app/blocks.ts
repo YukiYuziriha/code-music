@@ -79,14 +79,42 @@ const ENV_CELLS: readonly BlockCell[] = [
   { id: "env.empty", label: "", shortLabel: "ENV---", targetable: false },
 ];
 
-export const BLOCK_ORDER: readonly BlockId[] = ["osc", "env"];
+const LFO_CELLS: readonly BlockCell[] = [
+  { id: "lfo.rate", label: "rate", shortLabel: "LFORate", targetable: false },
+  {
+    id: "lfo.phase",
+    label: "phase",
+    shortLabel: "LFOPhase",
+    targetable: false,
+  },
+  { id: "lfo.mode", label: "mode", shortLabel: "LFOMode", targetable: false },
+  {
+    id: "lfo.graph",
+    label: "graph",
+    shortLabel: "LFOGraph",
+    targetable: false,
+  },
+  { id: "lfo.emptyA", label: "", shortLabel: "LFO---", targetable: false },
+  { id: "lfo.emptyB", label: "", shortLabel: "LFO---", targetable: false },
+  {
+    id: "lfo.matrix",
+    label: "matrix",
+    shortLabel: "LFOMat",
+    targetable: false,
+  },
+  { id: "lfo.empty", label: "", shortLabel: "LFO---", targetable: false },
+];
+
+export const BLOCK_ORDER: readonly BlockId[] = ["osc", "env", "lfo"];
 
 export const getBlockCells = (blockId: BlockId): readonly BlockCell[] => {
-  return blockId === "osc" ? OSC_CELLS : ENV_CELLS;
+  if (blockId === "osc") return OSC_CELLS;
+  if (blockId === "env") return ENV_CELLS;
+  return LFO_CELLS;
 };
 
 export const getCellShortLabel = (cellId: CellId): string => {
-  const allCells = [...OSC_CELLS, ...ENV_CELLS];
+  const allCells = [...OSC_CELLS, ...ENV_CELLS, ...LFO_CELLS];
   const found = allCells.find((cell) => cell.id === cellId);
   return found?.shortLabel ?? cellId;
 };

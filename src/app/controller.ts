@@ -6,7 +6,7 @@ import type { AudioEngine } from "../audio/engine.js";
 import type { AppAction } from "./actions.js";
 import { getBlockCells } from "./blocks.js";
 import { keyToSemitone, waveByKey } from "./keymap.js";
-import { CELL_SHORTCUTS } from "./shortcuts.js";
+import { CELL_SHORTCUTS, LFO_CELL_SHORTCUTS } from "./shortcuts.js";
 import { toMidi } from "./state.js";
 import type { AppState } from "./types.js";
 
@@ -18,8 +18,12 @@ interface ControllerDependencies {
   dispatch: (action: AppAction) => void;
 }
 
-const toggleMode = (mode: AppState["inputMode"]): AppState["inputMode"] => {
-  return mode === "play" ? "nav" : "play";
+const nextInputMode = (state: AppState): AppState["inputMode"] => {
+  if (state.inputMode === "play") return "nav";
+  if (state.inputMode === "nav") {
+    return state.selectedBlock === "lfo" ? "edit" : "play";
+  }
+  return "play";
 };
 
 const waveCycleOrder: readonly WaveForm[] = [
@@ -38,7 +42,7 @@ const cycleWave = (current: WaveForm, delta: -1 | 1): WaveForm => {
 };
 
 const isRepeatableShortcutKey = (key: string): boolean => {
-  for (const shortcut of CELL_SHORTCUTS) {
+  for (const shortcut of [...CELL_SHORTCUTS, ...LFO_CELL_SHORTCUTS]) {
     if (shortcut === undefined) continue;
     if (shortcut.decKey === key && key.length > 0 && key !== "enter")
       return true;
@@ -74,6 +78,14 @@ export const createController = (deps: ControllerDependencies) => {
     }
 
     deps.engine.setModRoutes(routes);
+  };
+
+  const syncLfo = (): void => {
+    const { lfo } = deps.getState();
+    deps.engine.setLfoMode(lfo.mode);
+    deps.engine.setLfoRateHz(lfo.rateHz);
+    deps.engine.setLfoPhaseOffset(lfo.phaseOffset);
+    deps.engine.setLfoPoints(lfo.points);
   };
 
   const setWave = (wave: WaveForm): void => {
@@ -190,7 +202,7 @@ export const createController = (deps: ControllerDependencies) => {
     if (cellIndex === 6 && key === "enter") {
       const state = deps.getState();
       if (state.matrixMode === "idle" && state.selectedBlock === "env") {
-        startMatrixPick();
+        startMatrixPick("env1", "env", "env.matrix");
         return true;
       }
 
@@ -198,6 +210,47 @@ export const createController = (deps: ControllerDependencies) => {
     }
 
     return false;
+  };
+
+  const applyLfoCellShortcut = (
+    cellIndex: number,
+    direction: -1 | 1,
+    key: string,
+  ): boolean => {
+    if (cellIndex === 0) {
+      deps.dispatch({ type: "lfo/rate/shift", delta: direction });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 1) {
+      deps.dispatch({ type: "lfo/phase/shift", delta: direction });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 2) {
+      deps.dispatch({ type: "lfo/mode/cycle", delta: direction });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 6 && key === "enter") {
+      const state = deps.getState();
+      if (state.matrixMode === "idle" && state.selectedBlock === "lfo") {
+        startMatrixPick("lfo1", "lfo", "lfo.matrix");
+        return true;
+      }
+      return false;
+    }
+
+    return false;
+  };
+
+  const getActiveShortcuts = (
+    blockId: AppState["selectedBlock"],
+  ): readonly (typeof CELL_SHORTCUTS)[number][] => {
+    return blockId === "lfo" ? LFO_CELL_SHORTCUTS : CELL_SHORTCUTS;
   };
 
   const handleSelectedBlockShortcut = (key: string): boolean => {
@@ -212,8 +265,9 @@ export const createController = (deps: ControllerDependencies) => {
       }
     }
 
-    for (let index = 0; index < CELL_SHORTCUTS.length; index += 1) {
-      const shortcut = CELL_SHORTCUTS[index];
+    const shortcuts = getActiveShortcuts(blockId);
+    for (let index = 0; index < shortcuts.length; index += 1) {
+      const shortcut = shortcuts[index];
       if (shortcut === undefined) continue;
       if (shortcut.hint.length === 0) continue;
 
@@ -224,22 +278,28 @@ export const createController = (deps: ControllerDependencies) => {
 
       return blockId === "osc"
         ? applyOscCellShortcut(index, direction, key)
-        : applyEnvCellShortcut(index, direction, key);
+        : blockId === "env"
+          ? applyEnvCellShortcut(index, direction, key)
+          : applyLfoCellShortcut(index, direction, key);
     }
 
     return false;
   };
 
-  const startMatrixPick = (): void => {
+  const startMatrixPick = (
+    source: "env1" | "lfo1",
+    originBlock: "env" | "lfo",
+    sourceCellId: "env.matrix" | "lfo.matrix",
+  ): void => {
     if (deps.getState().inputMode !== "nav") {
       deps.engine.panic();
       deps.dispatch({ type: "panic" });
       deps.dispatch({ type: "mode/set", mode: "nav" });
     }
 
-    const envCells = getBlockCells("env");
-    const matrixCellIndex = envCells.findIndex(
-      (cell) => cell.id === "env.matrix",
+    const sourceCells = getBlockCells(originBlock);
+    const matrixCellIndex = sourceCells.findIndex(
+      (cell) => cell.id === sourceCellId,
     );
     const oscCells = getBlockCells("osc");
     const firstTargetIndex = oscCells.findIndex((cell) => cell.targetable);
@@ -247,8 +307,8 @@ export const createController = (deps: ControllerDependencies) => {
     deps.dispatch({
       type: "matrix/selection/set",
       selection: {
-        source: "env1",
-        originBlock: "env",
+        source,
+        originBlock,
         originCellIndex: matrixCellIndex < 0 ? 0 : matrixCellIndex,
         targetBlock: "osc",
         targetCellIndex: firstTargetIndex < 0 ? 0 : firstTargetIndex,
@@ -368,6 +428,62 @@ export const createController = (deps: ControllerDependencies) => {
     return "none";
   };
 
+  const handleEditKeyDown = (event: KeyboardEvent): ControllerSignal => {
+    const key = event.key.toLowerCase();
+
+    if (key === "escape") {
+      deps.dispatch({ type: "mode/set", mode: "nav" });
+      return "none";
+    }
+
+    if (deps.getState().selectedBlock !== "lfo") {
+      deps.dispatch({ type: "mode/set", mode: "nav" });
+      return "none";
+    }
+
+    if (event.shiftKey && key === "h") {
+      deps.dispatch({ type: "lfo/point/move", dx: -1, dy: 0 });
+      syncLfo();
+      return "none";
+    }
+    if (event.shiftKey && key === "l") {
+      deps.dispatch({ type: "lfo/point/move", dx: 1, dy: 0 });
+      syncLfo();
+      return "none";
+    }
+    if (event.shiftKey && key === "j") {
+      deps.dispatch({ type: "lfo/point/move", dx: 0, dy: -1 });
+      syncLfo();
+      return "none";
+    }
+    if (event.shiftKey && key === "k") {
+      deps.dispatch({ type: "lfo/point/move", dx: 0, dy: 1 });
+      syncLfo();
+      return "none";
+    }
+
+    if (key === "h") {
+      deps.dispatch({ type: "lfo/point/select/cycle", delta: -1 });
+      return "none";
+    }
+    if (key === "l") {
+      deps.dispatch({ type: "lfo/point/select/cycle", delta: 1 });
+      return "none";
+    }
+    if (key === "j") {
+      deps.dispatch({ type: "lfo/point/remove" });
+      syncLfo();
+      return "none";
+    }
+    if (key === "k") {
+      deps.dispatch({ type: "lfo/point/add/right" });
+      syncLfo();
+      return "none";
+    }
+
+    return "none";
+  };
+
   const handleKeyDown = (event: KeyboardEvent): ControllerSignal => {
     const key = event.key.toLowerCase();
     const isUnisonDetuneKey = key === "i" || key === "o";
@@ -376,17 +492,23 @@ export const createController = (deps: ControllerDependencies) => {
     const shouldAllowRepeat =
       isUnisonDetuneKey ||
       isRepeatableShortcutKey(key) ||
+      (deps.getState().inputMode === "edit" &&
+        (key === "h" || key === "j" || key === "k" || key === "l")) ||
       (deps.getState().inputMode === "nav" && isMatrixNavRepeatKey);
 
     if (event.repeat && !shouldAllowRepeat) return "none";
 
     if (key === "`") {
-      const nextMode = toggleMode(deps.getState().inputMode);
+      const nextMode = nextInputMode(deps.getState());
       if (nextMode === "nav") {
         deps.engine.panic();
       }
       deps.dispatch({ type: "mode/set", mode: nextMode });
       return "none";
+    }
+
+    if (deps.getState().inputMode === "edit") {
+      return handleEditKeyDown(event);
     }
 
     if (deps.getState().inputMode === "nav") {

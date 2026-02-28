@@ -2,6 +2,7 @@ import type { ModRoute, ModTarget } from "./matrix.js";
 
 export type ModSourceValue = {
   readonly env1: number;
+  readonly lfo1: number;
 };
 
 export interface ModTargetDescriptor {
@@ -64,7 +65,12 @@ const toSourceSignal = (
   route: ModRoute,
   sourceValue: ModSourceValue,
 ): number => {
-  const raw = route.source === "env1" ? clamp01(sourceValue.env1) : 0;
+  let raw = 0;
+  if (route.source === "env1") {
+    raw = clamp01(sourceValue.env1);
+  } else if (route.source === "lfo1") {
+    raw = clamp01(sourceValue.lfo1);
+  }
   return route.bipolar ? raw * 2 - 1 : raw;
 };
 
@@ -118,5 +124,6 @@ export const resolveNoteOnUnisonVoices = (
 ): number => {
   return resolveTargetValue(routes, "osc.unisonVoices", baseUnisonVoices, {
     env1: 1,
+    lfo1: 0.5,
   });
 };

@@ -9,6 +9,10 @@ import {
   withHold,
   withMasterGain,
   withMaxVoices,
+  withLfoMode,
+  withLfoPhaseOffset,
+  withLfoPoints,
+  withLfoRateHz,
   withMorphMode,
   withRelease,
   withSustain,
@@ -16,6 +20,8 @@ import {
   withUnisonVoices,
   withWave,
   type OscMorphMode,
+  type LfoMode,
+  type LfoPoint,
   type PolySynthOptions,
   type SynthPatch,
   type WaveForm,
@@ -24,6 +30,8 @@ import { clamp01 } from "./utils.js";
 import { SynthVoice } from "./voice.js";
 
 export type {
+  LfoMode,
+  LfoPoint,
   OscMorphMode,
   PolySynthOptions,
   SynthPatch,
@@ -113,6 +121,34 @@ export class PolySynth {
     this.patch = withMorphMode(this.patch, mode);
     this.voices.forEachVoice((voice) => {
       voice.setMorphMode(mode);
+    });
+  }
+
+  setLfoMode(mode: LfoMode): void {
+    this.patch = withLfoMode(this.patch, mode);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoMode(this.patch.voice.lfo.mode, this.ctx.currentTime);
+    });
+  }
+
+  setLfoRateHz(rateHz: number): void {
+    this.patch = withLfoRateHz(this.patch, rateHz);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoRateHz(this.patch.voice.lfo.rateHz);
+    });
+  }
+
+  setLfoPhaseOffset(phaseOffset: number): void {
+    this.patch = withLfoPhaseOffset(this.patch, phaseOffset);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoPhaseOffset(this.patch.voice.lfo.phaseOffset);
+    });
+  }
+
+  setLfoPoints(points: readonly LfoPoint[]): void {
+    this.patch = withLfoPoints(this.patch, points);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoPoints(this.patch.voice.lfo.points);
     });
   }
 

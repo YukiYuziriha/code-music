@@ -1,4 +1,6 @@
 import {
+  type LfoMode,
+  type LfoPoint,
   type OscMorphMode,
   PolySynth,
   type ModRoute,
@@ -22,6 +24,16 @@ const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   masterGain: 0.2,
   unisonVoices: 1,
   unisonDetuneCents: 0,
+  lfoRateHz: 2,
+  lfoPhaseOffset: 0,
+  lfoMode: "trigger",
+  lfoPoints: [
+    { x: 0, y: 0 },
+    { x: 0.25, y: 1 },
+    { x: 0.5, y: 0 },
+    { x: 0.75, y: -1 },
+    { x: 1, y: 0 },
+  ],
 };
 
 export class AudioEngine {
@@ -89,6 +101,22 @@ export class AudioEngine {
 
   setOscMorphMode(mode: OscMorphMode): void {
     this.synth.setOscMorphMode(mode);
+  }
+
+  setLfoMode(mode: LfoMode): void {
+    this.synth.setLfoMode(mode);
+  }
+
+  setLfoRateHz(rateHz: number): void {
+    this.synth.setLfoRateHz(rateHz);
+  }
+
+  setLfoPhaseOffset(phaseOffset: number): void {
+    this.synth.setLfoPhaseOffset(phaseOffset);
+  }
+
+  setLfoPoints(points: readonly LfoPoint[]): void {
+    this.synth.setLfoPoints(points);
   }
 
   setMaxVoices(value: number): void {

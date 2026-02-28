@@ -10,6 +10,13 @@ export type OscMorphMode =
   | "inharmonic-stretch"
   | "smear";
 
+export type LfoMode = "trigger" | "sync" | "envelope";
+
+export interface LfoPoint {
+  x: number;
+  y: number;
+}
+
 export interface PolySynthOptions {
   maxVoices: number;
   delay: number;
@@ -23,6 +30,10 @@ export interface PolySynthOptions {
   unisonVoices: number;
   unisonDetuneCents: number;
   morphMode: OscMorphMode;
+  lfoRateHz: number;
+  lfoPhaseOffset: number;
+  lfoMode: LfoMode;
+  lfoPoints: readonly LfoPoint[];
 }
 
 export interface OscillatorParams {
@@ -46,6 +57,12 @@ export interface AmpEnvelopeParams {
 export interface VoiceParams {
   osc: OscillatorParams;
   ampEnv: AmpEnvelopeParams;
+  lfo: {
+    mode: LfoMode;
+    rateHz: number;
+    phaseOffset: number;
+    points: readonly LfoPoint[];
+  };
 }
 
 export interface GlobalParams {
@@ -63,6 +80,16 @@ const MAX_VOICES = 64;
 const MAX_UNISON_VOICES = 16;
 const MAX_ENV_SECONDS = 8;
 const MAX_UNISON_DETUNE_CENTS = 100;
+const MIN_LFO_RATE_HZ = 0.01;
+const MAX_LFO_RATE_HZ = 64;
+
+export const DEFAULT_LFO_POINTS: readonly LfoPoint[] = [
+  { x: 0, y: 0 },
+  { x: 0.25, y: 1 },
+  { x: 0.5, y: 0 },
+  { x: 0.75, y: -1 },
+  { x: 1, y: 0 },
+];
 
 export const DEFAULT_POLY_SYNTH_OPTIONS: PolySynthOptions = {
   maxVoices: 8,
@@ -77,6 +104,10 @@ export const DEFAULT_POLY_SYNTH_OPTIONS: PolySynthOptions = {
   unisonVoices: 1,
   unisonDetuneCents: 0,
   morphMode: "none",
+  lfoRateHz: 2,
+  lfoPhaseOffset: 0,
+  lfoMode: "trigger",
+  lfoPoints: DEFAULT_LFO_POINTS,
 };
 
 const clampEnvTime = (value: number): number => {
@@ -93,6 +124,43 @@ const clampUnisonVoices = (value: number): number => {
 
 const clampUnisonDetuneCents = (value: number): number => {
   return clamp(value, 0, MAX_UNISON_DETUNE_CENTS);
+};
+
+const clampLfoRateHz = (value: number): number => {
+  return clamp(value, MIN_LFO_RATE_HZ, MAX_LFO_RATE_HZ);
+};
+
+const clampLfoPhaseOffset = (value: number): number => {
+  return clamp(value, 0, 1);
+};
+
+const normalizeLfoPoint = (point: LfoPoint): LfoPoint => {
+  return {
+    x: clamp(point.x, 0, 1),
+    y: clamp(point.y, -1, 1),
+  };
+};
+
+const normalizeLfoPoints = (
+  points: readonly LfoPoint[],
+): readonly LfoPoint[] => {
+  if (points.length < 2)
+    return DEFAULT_LFO_POINTS.map((point) => ({ ...point }));
+
+  const sorted = points
+    .map((point) => normalizeLfoPoint(point))
+    .sort((a, b) => a.x - b.x)
+    .map((point) => ({ ...point }));
+  const first = sorted[0];
+  if (first !== undefined) {
+    sorted[0] = { ...first, x: 0 };
+  }
+  const lastIndex = sorted.length - 1;
+  const last = sorted[lastIndex];
+  if (last !== undefined) {
+    sorted[lastIndex] = { ...last, x: 1 };
+  }
+  return sorted;
 };
 
 export const createPatch = (
@@ -121,6 +189,12 @@ export const createPatch = (
         sustain: clamp01(merged.sustain),
         release: clampEnvTime(merged.release),
       },
+      lfo: {
+        mode: merged.lfoMode,
+        rateHz: clampLfoRateHz(merged.lfoRateHz),
+        phaseOffset: clampLfoPhaseOffset(merged.lfoPhaseOffset),
+        points: normalizeLfoPoints(merged.lfoPoints),
+      },
     },
     global: {
       maxVoices: clampMaxVoices(merged.maxVoices),
@@ -134,6 +208,10 @@ export const copyPatch = (patch: SynthPatch): SynthPatch => {
     voice: {
       osc: { ...patch.voice.osc },
       ampEnv: { ...patch.voice.ampEnv },
+      lfo: {
+        ...patch.voice.lfo,
+        points: patch.voice.lfo.points.map((point) => ({ ...point })),
+      },
     },
     global: { ...patch.global },
   };
@@ -299,6 +377,67 @@ export const withMorphMode = (
       osc: {
         ...patch.voice.osc,
         morphMode,
+      },
+    },
+  };
+};
+
+export const withLfoMode = (patch: SynthPatch, mode: LfoMode): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      lfo: {
+        ...patch.voice.lfo,
+        mode,
+      },
+    },
+  };
+};
+
+export const withLfoRateHz = (
+  patch: SynthPatch,
+  rateHz: number,
+): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      lfo: {
+        ...patch.voice.lfo,
+        rateHz: clampLfoRateHz(rateHz),
+      },
+    },
+  };
+};
+
+export const withLfoPhaseOffset = (
+  patch: SynthPatch,
+  phaseOffset: number,
+): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      lfo: {
+        ...patch.voice.lfo,
+        phaseOffset: clampLfoPhaseOffset(phaseOffset),
+      },
+    },
+  };
+};
+
+export const withLfoPoints = (
+  patch: SynthPatch,
+  points: readonly LfoPoint[],
+): SynthPatch => {
+  return {
+    ...patch,
+    voice: {
+      ...patch.voice,
+      lfo: {
+        ...patch.voice.lfo,
+        points: normalizeLfoPoints(points),
       },
     },
   };
