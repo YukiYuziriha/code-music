@@ -10,6 +10,7 @@ interface VoiceBlockInput {
 
 export interface VoiceBlocks {
   oscs: OscillatorNode[];
+  oscMix: GainNode;
   morph: MorphChain;
   amp: GainNode;
 }
@@ -183,6 +184,7 @@ export const unisonGainScale = (unisonVoices: number): number => {
 export const createVoiceBlocks = (input: VoiceBlockInput): VoiceBlocks => {
   const amp = input.ctx.createGain();
   const morph = createMorphChain(input.ctx);
+  const oscMix = input.ctx.createGain();
 
   const detuneOffsets = buildUnisonDetuneOffsets(
     input.patch.voice.osc.unisonVoices,
@@ -196,15 +198,16 @@ export const createVoiceBlocks = (input: VoiceBlockInput): VoiceBlocks => {
       input.patch.voice.osc.detuneCents + detuneOffset,
       input.ctx.currentTime,
     );
-    osc.connect(morph.input);
+    osc.connect(oscMix);
     return osc;
   });
 
+  oscMix.connect(morph.input);
   morph.setMode(input.patch.voice.osc.morphMode, input.ctx.currentTime);
   morph.output.connect(amp);
   amp.connect(input.output);
 
-  return { oscs, morph, amp };
+  return { oscs, oscMix, morph, amp };
 };
 
 export const scheduleAmpEnvelopeStart = (

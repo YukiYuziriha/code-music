@@ -29,6 +29,6 @@ export type AppAction =
   | { type: "env/sustain/shift"; delta: number }
   | { type: "env/release/shift"; delta: number }
   | { type: "wave/set"; wave: WaveForm }
-  | { type: "note/on"; key: string; midi: number }
-  | { type: "note/off"; key: string }
+  | { type: "note/on"; key: string; midi: number; atMs: number }
+  | { type: "note/off"; key: string; atMs: number }
   | { type: "panic" };

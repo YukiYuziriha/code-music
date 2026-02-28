@@ -72,6 +72,9 @@ const quitAppScreen = (): void => {
 
 enterAppScreen();
 renderer.render(state);
+const refreshTimer = window.setInterval(() => {
+  renderer.render(state);
+}, 50);
 
 const onDataSub = term.onData((data) => {
   if (data === ESC || controller.handleTerminalData(data) === "quit") {
@@ -85,6 +88,7 @@ let disposeLifecycle = () => {
 
 const cleanup = (): void => {
   panicAll();
+  window.clearInterval(refreshTimer);
   onDataSub.dispose();
   disposeLifecycle();
   leaveAppScreen();

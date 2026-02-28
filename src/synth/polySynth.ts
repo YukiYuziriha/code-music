@@ -97,6 +97,9 @@ export class PolySynth {
 
   setUnisonVoices(value: number): void {
     this.patch = withUnisonVoices(this.patch, value);
+    this.voices.forEachVoice((voice) => {
+      voice.setUnisonVoices(this.patch.voice.osc.unisonVoices);
+    });
   }
 
   setUnisonDetuneCents(value: number): void {
@@ -120,6 +123,10 @@ export class PolySynth {
 
   setModRoutes(routes: readonly ModRoute[]): void {
     this.modMatrix.setRoutes(routes);
+    const resolvedRoutes = this.modMatrix.getRoutes();
+    this.voices.forEachVoice((voice) => {
+      voice.setModRoutes(resolvedRoutes, this.ctx.currentTime);
+    });
   }
 
   getModRoutes(): readonly ModRoute[] {
@@ -138,6 +145,7 @@ export class PolySynth {
       ctx: this.ctx,
       output: this.master,
       patch: copyPatch(this.patch),
+      modRoutes: this.modMatrix.getRoutes(),
       midi,
       velocity: clamp01(velocity),
       onEnded: (endedMidi) => {

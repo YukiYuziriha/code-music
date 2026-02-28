@@ -406,11 +406,12 @@ export const createController = (deps: ControllerDependencies) => {
     }
 
     event.preventDefault();
+    const atMs = performance.now();
     void deps.engine.resumeIfNeeded().then(() => {
       const midi = toMidi(deps.getState(), key);
       if (midi === null) return;
       deps.engine.noteOn(midi, 0.85);
-      deps.dispatch({ type: "note/on", key, midi });
+      deps.dispatch({ type: "note/on", key, midi, atMs });
     });
 
     return "none";
@@ -424,7 +425,7 @@ export const createController = (deps: ControllerDependencies) => {
     if (midi === undefined) return;
 
     deps.engine.noteOff(midi);
-    deps.dispatch({ type: "note/off", key });
+    deps.dispatch({ type: "note/off", key, atMs: performance.now() });
   };
 
   const handleTerminalData = (data: string): ControllerSignal => {

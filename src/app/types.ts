@@ -46,6 +46,12 @@ export interface MatrixSelectionState {
   readonly targetCellIndex: number;
 }
 
+export interface EnvPreviewState {
+  readonly gateOnAtMs: number | null;
+  readonly gateOffAtMs: number | null;
+  readonly releaseStartLevel: number;
+}
+
 export interface AppState {
   readonly activeKeys: Map<string, number>;
   readonly baseMidi: number;
@@ -61,6 +67,7 @@ export interface AppState {
   readonly matrixMode: MatrixMode;
   readonly matrixSelection: MatrixSelectionState | null;
   readonly modRoutes: readonly ModRoute[];
+  readonly envPreview: EnvPreviewState;
 }
 
 export const BASE_MIDI = 60;

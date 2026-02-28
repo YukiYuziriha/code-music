@@ -37,6 +37,39 @@ const DEFAULT_UNISON_DETUNE_STEP_CENTS = 1;
 const DEFAULT_ENV_TIME_STEP = 0.01;
 const DEFAULT_ENV_SUSTAIN_STEP = 0.02;
 
+const clamp01 = (value: number): number => {
+  return clamp(value, 0, 1);
+};
+
+const getPreReleaseEnvLevel = (
+  nowMs: number,
+  gateOnAtMs: number,
+  env: AppState["env"],
+): number => {
+  const elapsed = Math.max(0, (nowMs - gateOnAtMs) / 1000);
+  const delayEnd = env.delay;
+  const attackEnd = delayEnd + env.attack;
+  const holdEnd = attackEnd + env.hold;
+  const decayEnd = holdEnd + env.decay;
+
+  if (elapsed < delayEnd) return 0;
+
+  if (elapsed < attackEnd) {
+    if (env.attack <= 0) return 1;
+    return clamp01((elapsed - delayEnd) / env.attack);
+  }
+
+  if (elapsed < holdEnd) return 1;
+
+  if (elapsed < decayEnd) {
+    if (env.decay <= 0) return env.sustain;
+    const progress = clamp01((elapsed - holdEnd) / env.decay);
+    return 1 + (env.sustain - 1) * progress;
+  }
+
+  return env.sustain;
+};
+
 const oscMorphModes: readonly OscMorphMode[] = [
   "none",
   "low-pass",
@@ -129,6 +162,11 @@ export const createInitialState = (): AppState => {
     matrixMode: "idle",
     matrixSelection: null,
     modRoutes: [],
+    envPreview: {
+      gateOnAtMs: null,
+      gateOffAtMs: null,
+      releaseStartLevel: 0,
+    },
   };
 };
 
@@ -350,17 +388,54 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
       if (state.activeKeys.has(action.key)) return state;
       const nextActiveKeys = new Map(state.activeKeys);
       nextActiveKeys.set(action.key, action.midi);
-      return { ...state, activeKeys: nextActiveKeys };
+      return {
+        ...state,
+        activeKeys: nextActiveKeys,
+        envPreview: {
+          gateOnAtMs: action.atMs,
+          gateOffAtMs: null,
+          releaseStartLevel: 0,
+        },
+      };
     }
     case "note/off": {
       if (!state.activeKeys.has(action.key)) return state;
       const nextActiveKeys = new Map(state.activeKeys);
       nextActiveKeys.delete(action.key);
-      return { ...state, activeKeys: nextActiveKeys };
+      if (nextActiveKeys.size > 0) {
+        return {
+          ...state,
+          activeKeys: nextActiveKeys,
+        };
+      }
+
+      const gateOnAtMs = state.envPreview.gateOnAtMs;
+      const releaseStartLevel =
+        gateOnAtMs === null
+          ? 0
+          : getPreReleaseEnvLevel(action.atMs, gateOnAtMs, state.env);
+
+      return {
+        ...state,
+        activeKeys: nextActiveKeys,
+        envPreview: {
+          ...state.envPreview,
+          gateOffAtMs: action.atMs,
+          releaseStartLevel,
+        },
+      };
     }
     case "panic": {
       if (state.activeKeys.size === 0) return state;
-      return { ...state, activeKeys: new Map<string, number>() };
+      return {
+        ...state,
+        activeKeys: new Map<string, number>(),
+        envPreview: {
+          gateOnAtMs: null,
+          gateOffAtMs: null,
+          releaseStartLevel: 0,
+        },
+      };
     }
   }
 };
