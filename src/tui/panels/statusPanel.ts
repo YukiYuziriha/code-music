@@ -1,6 +1,8 @@
 import {
   cell,
   divider,
+  progressStatusCell,
+  progressStatusCellWithHint,
   row,
   statusCell,
   statusCellWithHint,
@@ -44,12 +46,65 @@ const lfoShapeLabelByShape: Record<AppState["lfo"]["shape"], string> = {
   random: "Random",
 };
 
+const waveOrder: readonly AppState["currentWave"][] = [
+  "sine",
+  "triangle",
+  "sawtooth",
+  "square",
+];
+
+const morphOrder: readonly AppState["oscMorphMode"][] = [
+  "none",
+  "low-pass",
+  "high-pass",
+  "harmonic-stretch",
+  "formant-scale",
+  "inharmonic-stretch",
+  "smear",
+];
+
+const lfoShapeOrder: readonly AppState["lfo"]["shape"][] = [
+  "sine",
+  "triangle",
+  "saw",
+  "square",
+  "random",
+];
+
+const lfoRateModeOrder: readonly AppState["lfo"]["rateMode"][] = ["hz", "sync"];
+
+const lfoRateSyncOrder: readonly AppState["lfo"]["rateSync"][] = [
+  "1/1",
+  "1/2",
+  "1/4",
+  "1/8",
+  "1/16",
+  "1/32",
+  "1/4T",
+  "1/8T",
+  "1/16T",
+  "1/4D",
+  "1/8D",
+];
+
 const formatSeconds = (value: number): string => {
   return `${value.toFixed(2)}s`;
 };
 
 const clamp01 = (value: number): number => {
   return Math.max(0, Math.min(1, value));
+};
+
+const normalizeRange = (value: number, min: number, max: number): number => {
+  if (max <= min) return 0;
+  return clamp01((value - min) / (max - min));
+};
+
+const normalizeDiscrete = <T>(value: T, states: readonly T[]): number => {
+  if (states.length <= 1) return 0;
+  const index = states.indexOf(value);
+  if (index < 0) return 0;
+  return index / (states.length - 1);
 };
 
 const toSynthRoutes = (
@@ -281,6 +336,90 @@ const getCellValue = (
   }
 };
 
+const getCellProgress = (
+  state: AppState,
+  cellId: CellId,
+  nowMs: number,
+): number | null => {
+  const lfoActive = state.activeKeys.size > 0;
+  const synthRoutes = toSynthRoutes(state, lfoActive);
+  const envPreview = getEnvPreviewLevel(state, nowMs);
+  const lfoPreview = getLfoPreview(state, nowMs).normalized;
+
+  switch (cellId) {
+    case "osc.wave":
+      return normalizeDiscrete(state.currentWave, waveOrder);
+    case "osc.octave":
+      return normalizeRange(state.octaveOffset, -4, 4);
+    case "osc.unisonVoices": {
+      const value =
+        !hasEnvRouteForTarget(state, "osc.unisonVoices") &&
+        (!lfoActive || !hasLfoRouteForTarget(state, "osc.unisonVoices"))
+          ? state.unisonVoices
+          : resolveTargetValue(
+              synthRoutes,
+              "osc.unisonVoices",
+              state.unisonVoices,
+              {
+                env1: envPreview,
+                lfo1: lfoPreview,
+              },
+            );
+      return normalizeRange(value, 1, 16);
+    }
+    case "osc.unisonDetuneCents": {
+      const value =
+        !hasEnvRouteForTarget(state, "osc.unisonDetuneCents") &&
+        (!lfoActive || !hasLfoRouteForTarget(state, "osc.unisonDetuneCents"))
+          ? state.unisonDetuneCents
+          : resolveTargetValue(
+              synthRoutes,
+              "osc.unisonDetuneCents",
+              state.unisonDetuneCents,
+              {
+                env1: envPreview,
+                lfo1: lfoPreview,
+              },
+            );
+      return normalizeRange(value, 0, 100);
+    }
+    case "osc.morph":
+      return normalizeDiscrete(state.oscMorphMode, morphOrder);
+    case "env.delay":
+      return normalizeRange(state.env.delay, 0, 8);
+    case "env.attack":
+      return normalizeRange(state.env.attack, 0, 8);
+    case "env.hold":
+      return normalizeRange(state.env.hold, 0, 8);
+    case "env.decay":
+      return normalizeRange(state.env.decay, 0, 8);
+    case "env.sustain":
+      return normalizeRange(state.env.sustain, 0, 1);
+    case "env.release":
+      return normalizeRange(state.env.release, 0, 8);
+    case "lfo.shape":
+      return normalizeDiscrete(state.lfo.shape, lfoShapeOrder);
+    case "lfo.rateMode":
+      return normalizeDiscrete(state.lfo.rateMode, lfoRateModeOrder);
+    case "lfo.rate":
+      return state.lfo.rateMode === "hz"
+        ? normalizeRange(state.lfo.rateHz, 0.01, 64)
+        : normalizeDiscrete(state.lfo.rateSync, lfoRateSyncOrder);
+    case "lfo.depth":
+      return normalizeRange(state.lfo.depth, 0, 1);
+    case "lfo.phase":
+      return normalizeRange(state.lfo.phase, 0, 1);
+    case "lfo.retrigger":
+      return state.lfo.retrigger ? 1 : 0;
+    case "lfo.bipolar":
+      return state.lfo.bipolar ? 1 : 0;
+    case "lfo.smooth":
+      return normalizeRange(state.lfo.smooth, 0, 1);
+    default:
+      return null;
+  }
+};
+
 const getCellHint = (
   state: AppState,
   blockId: BlockId,
@@ -361,8 +500,30 @@ const renderBlockColumn = (
     }
 
     const value = getCellValue(state, cellMeta.id, nowMs);
+    const progress = getCellProgress(state, cellMeta.id, nowMs);
     const hint = getCellHint(state, blockId, index, isFocused);
     const { tone, bold } = getCellTone(state, blockId, cellMeta.id, index);
+    if (progress !== null) {
+      return hint.length > 0
+        ? progressStatusCellWithHint(
+            cellMeta.label,
+            value,
+            hint,
+            panelWidth,
+            tone,
+            progress,
+            bold,
+          )
+        : progressStatusCell(
+            cellMeta.label,
+            value,
+            panelWidth,
+            tone,
+            progress,
+            bold,
+          );
+    }
+
     return hint.length > 0
       ? statusCellWithHint(cellMeta.label, value, hint, panelWidth, tone, bold)
       : statusCell(cellMeta.label, value, panelWidth, tone, bold);
@@ -390,11 +551,12 @@ const renderLfoPanel = (state: AppState, panelWidth: number): string[] => {
   const out = `${preview.signedOut >= 0 ? "+" : ""}${preview.signedOut.toFixed(2)}`;
 
   const rows: string[] = [
-    statusCell(
+    progressStatusCell(
       "LFO",
       `out ${out}`,
       panelWidth,
       isFocused ? "pink" : "gray",
+      preview.normalized,
       true,
     ),
   ];
@@ -405,18 +567,38 @@ const renderLfoPanel = (state: AppState, panelWidth: number): string[] => {
     if (cellMeta === undefined) continue;
     const hint = getCellHint(state, "lfo", index, isFocused);
     const value = getCellValue(state, cellMeta.id, nowMs);
+    const progress = getCellProgress(state, cellMeta.id, nowMs);
     const tone = isFocused ? "blue" : "gray";
     rows.push(
-      hint.length > 0
-        ? statusCellWithHint(
-            cellMeta.label,
-            value,
-            hint,
-            panelWidth,
-            tone,
-            false,
-          )
-        : statusCell(cellMeta.label, value, panelWidth, tone, false),
+      progress !== null
+        ? hint.length > 0
+          ? progressStatusCellWithHint(
+              cellMeta.label,
+              value,
+              hint,
+              panelWidth,
+              tone,
+              progress,
+              false,
+            )
+          : progressStatusCell(
+              cellMeta.label,
+              value,
+              panelWidth,
+              tone,
+              progress,
+              false,
+            )
+        : hint.length > 0
+          ? statusCellWithHint(
+              cellMeta.label,
+              value,
+              hint,
+              panelWidth,
+              tone,
+              false,
+            )
+          : statusCell(cellMeta.label, value, panelWidth, tone, false),
     );
   }
 
