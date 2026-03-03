@@ -32,13 +32,14 @@ export type AppAction =
   | { type: "env/decay/shift"; delta: number }
   | { type: "env/sustain/shift"; delta: number }
   | { type: "env/release/shift"; delta: number }
+  | { type: "lfo/shape/cycle"; delta: -1 | 1 }
+  | { type: "lfo/rate-mode/cycle"; delta: -1 | 1 }
   | { type: "lfo/rate/shift"; delta: number }
+  | { type: "lfo/depth/shift"; delta: number }
   | { type: "lfo/phase/shift"; delta: number }
-  | { type: "lfo/mode/cycle"; delta: -1 | 1 }
-  | { type: "lfo/point/select/cycle"; delta: -1 | 1 }
-  | { type: "lfo/point/add/right" }
-  | { type: "lfo/point/remove" }
-  | { type: "lfo/point/move"; dx: number; dy: number }
+  | { type: "lfo/retrigger/toggle" }
+  | { type: "lfo/bipolar/toggle" }
+  | { type: "lfo/smooth/shift"; delta: number }
   | { type: "wave/set"; wave: WaveForm }
   | { type: "note/on"; key: string; midi: number; atMs: number }
   | { type: "note/off"; key: string; atMs: number }

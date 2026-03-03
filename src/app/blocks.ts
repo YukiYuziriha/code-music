@@ -80,29 +80,55 @@ const ENV_CELLS: readonly BlockCell[] = [
 ];
 
 const LFO_CELLS: readonly BlockCell[] = [
+  {
+    id: "lfo.shape",
+    label: "shape",
+    shortLabel: "LFOShape",
+    targetable: false,
+  },
+  {
+    id: "lfo.rateMode",
+    label: "rate mode",
+    shortLabel: "LFORateM",
+    targetable: false,
+  },
   { id: "lfo.rate", label: "rate", shortLabel: "LFORate", targetable: false },
+  {
+    id: "lfo.depth",
+    label: "depth",
+    shortLabel: "LFODepth",
+    targetable: false,
+  },
   {
     id: "lfo.phase",
     label: "phase",
     shortLabel: "LFOPhase",
     targetable: false,
   },
-  { id: "lfo.mode", label: "mode", shortLabel: "LFOMode", targetable: false },
   {
-    id: "lfo.graph",
-    label: "graph",
-    shortLabel: "LFOGraph",
+    id: "lfo.retrigger",
+    label: "retrigger",
+    shortLabel: "LFORetrig",
     targetable: false,
   },
-  { id: "lfo.emptyA", label: "", shortLabel: "LFO---", targetable: false },
-  { id: "lfo.emptyB", label: "", shortLabel: "LFO---", targetable: false },
+  {
+    id: "lfo.bipolar",
+    label: "bipolar",
+    shortLabel: "LFOBipol",
+    targetable: false,
+  },
+  {
+    id: "lfo.smooth",
+    label: "smooth",
+    shortLabel: "LFOSmooth",
+    targetable: false,
+  },
   {
     id: "lfo.matrix",
     label: "matrix",
     shortLabel: "LFOMat",
     targetable: false,
   },
-  { id: "lfo.empty", label: "", shortLabel: "LFO---", targetable: false },
 ];
 
 export const BLOCK_ORDER: readonly BlockId[] = ["osc", "env", "lfo"];

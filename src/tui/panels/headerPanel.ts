@@ -9,9 +9,7 @@ export const renderHeaderPanel = (
   const modeLabel =
     mode === "play"
       ? "CURRENT MODE: PLAY (` to toggle)"
-      : mode === "nav"
-        ? "CURRENT MODE: NAV (` to toggle)"
-        : "CURRENT MODE: EDIT (` to toggle)";
+      : "CURRENT MODE: NAV (` to toggle)";
 
   const blockLabel =
     state.selectedBlock === "osc"
@@ -23,9 +21,7 @@ export const renderHeaderPanel = (
   const detailLabel =
     mode === "play"
       ? `SHORTCUTS ACTIVE: ${blockLabel}`
-      : mode === "nav"
-        ? `BLOCK: ${blockLabel}  MATRIX: ${state.matrixMode.toUpperCase()}`
-        : "LFO GRAPH EDIT: h/l select  j remove  k add  shift+h/j/k/l move";
+      : `BLOCK: ${blockLabel}  MATRIX: ${state.matrixMode.toUpperCase()}`;
 
   return [
     divider(fullWidth),

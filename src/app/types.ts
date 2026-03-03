@@ -1,11 +1,12 @@
 import type {
-  LfoMode,
-  LfoPoint,
+  LfoRateMode,
+  LfoShape,
+  LfoSyncDivision,
   OscMorphMode,
   WaveForm,
 } from "../synth/polySynth.js";
 
-export type InputMode = "nav" | "play" | "edit";
+export type InputMode = "nav" | "play";
 export type BlockId = "osc" | "env" | "lfo";
 export type MatrixMode = "idle" | "pick-block" | "pick-cell";
 
@@ -26,14 +27,15 @@ export type CellId =
   | "env.release"
   | "env.matrix"
   | "env.empty"
+  | "lfo.shape"
+  | "lfo.rateMode"
   | "lfo.rate"
+  | "lfo.depth"
   | "lfo.phase"
-  | "lfo.mode"
-  | "lfo.graph"
-  | "lfo.emptyA"
-  | "lfo.emptyB"
-  | "lfo.matrix"
-  | "lfo.empty";
+  | "lfo.retrigger"
+  | "lfo.bipolar"
+  | "lfo.smooth"
+  | "lfo.matrix";
 
 export interface EnvSettings {
   readonly delay: number;
@@ -60,11 +62,15 @@ export interface MatrixSelectionState {
 }
 
 export interface LfoSettings {
-  readonly mode: LfoMode;
+  readonly shape: LfoShape;
+  readonly rateMode: LfoRateMode;
   readonly rateHz: number;
-  readonly phaseOffset: number;
-  readonly points: readonly LfoPoint[];
-  readonly selectedPointIndex: number;
+  readonly rateSync: LfoSyncDivision;
+  readonly depth: number;
+  readonly phase: number;
+  readonly retrigger: boolean;
+  readonly bipolar: boolean;
+  readonly smooth: number;
 }
 
 export interface EnvPreviewState {

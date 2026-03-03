@@ -9,10 +9,15 @@ import {
   withHold,
   withMasterGain,
   withMaxVoices,
-  withLfoMode,
-  withLfoPhaseOffset,
-  withLfoPoints,
+  withLfoBipolar,
+  withLfoDepth,
+  withLfoPhase,
   withLfoRateHz,
+  withLfoRateMode,
+  withLfoRateSync,
+  withLfoRetrigger,
+  withLfoShape,
+  withLfoSmooth,
   withMorphMode,
   withRelease,
   withSustain,
@@ -20,8 +25,9 @@ import {
   withUnisonVoices,
   withWave,
   type OscMorphMode,
-  type LfoMode,
-  type LfoPoint,
+  type LfoRateMode,
+  type LfoShape,
+  type LfoSyncDivision,
   type PolySynthOptions,
   type SynthPatch,
   type WaveForm,
@@ -30,8 +36,9 @@ import { clamp01 } from "./utils.js";
 import { SynthVoice } from "./voice.js";
 
 export type {
-  LfoMode,
-  LfoPoint,
+  LfoRateMode,
+  LfoShape,
+  LfoSyncDivision,
   OscMorphMode,
   PolySynthOptions,
   SynthPatch,
@@ -124,10 +131,17 @@ export class PolySynth {
     });
   }
 
-  setLfoMode(mode: LfoMode): void {
-    this.patch = withLfoMode(this.patch, mode);
+  setLfoShape(shape: LfoShape): void {
+    this.patch = withLfoShape(this.patch, shape);
     this.voices.forEachVoice((voice) => {
-      voice.setLfoMode(this.patch.voice.lfo.mode, this.ctx.currentTime);
+      voice.setLfoShape(this.patch.voice.lfo.shape);
+    });
+  }
+
+  setLfoRateMode(rateMode: LfoRateMode): void {
+    this.patch = withLfoRateMode(this.patch, rateMode);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoRateMode(this.patch.voice.lfo.rateMode);
     });
   }
 
@@ -138,17 +152,48 @@ export class PolySynth {
     });
   }
 
-  setLfoPhaseOffset(phaseOffset: number): void {
-    this.patch = withLfoPhaseOffset(this.patch, phaseOffset);
+  setLfoRateSync(rateSync: LfoSyncDivision): void {
+    this.patch = withLfoRateSync(this.patch, rateSync);
     this.voices.forEachVoice((voice) => {
-      voice.setLfoPhaseOffset(this.patch.voice.lfo.phaseOffset);
+      voice.setLfoRateSync(this.patch.voice.lfo.rateSync);
     });
   }
 
-  setLfoPoints(points: readonly LfoPoint[]): void {
-    this.patch = withLfoPoints(this.patch, points);
+  setLfoDepth(depth: number): void {
+    this.patch = withLfoDepth(this.patch, depth);
     this.voices.forEachVoice((voice) => {
-      voice.setLfoPoints(this.patch.voice.lfo.points);
+      voice.setLfoDepth(this.patch.voice.lfo.depth);
+    });
+  }
+
+  setLfoPhase(phase: number): void {
+    this.patch = withLfoPhase(this.patch, phase);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoPhase(this.patch.voice.lfo.phase);
+    });
+  }
+
+  setLfoRetrigger(retrigger: boolean): void {
+    this.patch = withLfoRetrigger(this.patch, retrigger);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoRetrigger(
+        this.patch.voice.lfo.retrigger,
+        this.ctx.currentTime,
+      );
+    });
+  }
+
+  setLfoBipolar(bipolar: boolean): void {
+    this.patch = withLfoBipolar(this.patch, bipolar);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoBipolar(this.patch.voice.lfo.bipolar);
+    });
+  }
+
+  setLfoSmooth(smooth: number): void {
+    this.patch = withLfoSmooth(this.patch, smooth);
+    this.voices.forEachVoice((voice) => {
+      voice.setLfoSmooth(this.patch.voice.lfo.smooth);
     });
   }
 

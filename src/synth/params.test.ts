@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   copyPatch,
   createPatch,
-  DEFAULT_LFO_POINTS,
   withAttack,
   withDecay,
   withDelay,
@@ -27,7 +26,9 @@ describe("synth/params", () => {
     expect(patch.voice.ampEnv.sustain).toBe(0.8);
     expect(patch.global.maxVoices).toBe(8);
     expect(patch.global.masterGain).toBe(0.2);
-    expect(patch.voice.lfo.points).toEqual(DEFAULT_LFO_POINTS);
+    expect(patch.voice.lfo.shape).toBe("sine");
+    expect(patch.voice.lfo.rateMode).toBe("hz");
+    expect(patch.voice.lfo.rateSync).toBe("1/4");
   });
 
   test("createPatch clamps voice/env/global boundaries", () => {
@@ -113,7 +114,5 @@ describe("synth/params", () => {
     expect(copied.voice.osc).not.toBe(patch.voice.osc);
     expect(copied.voice.ampEnv).not.toBe(patch.voice.ampEnv);
     expect(copied.voice.lfo).not.toBe(patch.voice.lfo);
-    expect(copied.voice.lfo.points).not.toBe(patch.voice.lfo.points);
-    expect(copied.voice.lfo.points[0]).not.toBe(patch.voice.lfo.points[0]);
   });
 });

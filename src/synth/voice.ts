@@ -5,12 +5,18 @@ import {
   scheduleAmpRelease,
   unisonGainScale,
 } from "./blocks.js";
-import { getLfoPhaseAtTime, sampleLfoShape } from "./lfo.js";
+import {
+  getLfoCycleIndexAtTime,
+  getLfoPhaseAtTime,
+  resolveLfoRateHz,
+  sampleLfoShape,
+} from "./lfo.js";
 import type { ModRoute } from "./matrix.js";
 import { resolveTargetValue } from "./modulation.js";
 import type {
-  LfoMode,
-  LfoPoint,
+  LfoRateMode,
+  LfoShape,
+  LfoSyncDivision,
   OscMorphMode,
   SynthPatch,
   WaveForm,
@@ -37,6 +43,8 @@ interface UnisonStack {
 const EPSILON_SECONDS = 1e-6;
 const UNISON_CROSSFADE_SECONDS = 0.012;
 const MODULATION_TICK_MS = 16;
+const LFO_SYNC_BPM = 128;
+const LFO_SMOOTH_MAX_SECONDS = 0.12;
 
 const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
@@ -106,6 +114,8 @@ export class SynthVoice {
   private releaseStartEnvLevel = 0;
   private currentModUnisonDetune = 0;
   private currentModUnisonVoices = 1;
+  private lastLfoSignedOut = 0;
+  private lastLfoSampleTime: number | null = null;
   private modulationTimer: ReturnType<typeof setInterval> | null = null;
   private state: VoiceState = "idle";
 
@@ -159,6 +169,8 @@ export class SynthVoice {
     this.noteOnTime = now;
     this.releasedAt = null;
     this.releaseStartEnvLevel = 0;
+    this.lastLfoSignedOut = 0;
+    this.lastLfoSampleTime = null;
     this.refreshModulation(now);
 
     scheduleAmpEnvelopeStart(
@@ -254,22 +266,34 @@ export class SynthVoice {
     this.refreshModulation(now);
   }
 
-  setLfoMode(mode: LfoMode, now: number): void {
+  setLfoShape(shape: LfoShape): void {
     this.patch = {
       ...this.patch,
       voice: {
         ...this.patch.voice,
         lfo: {
           ...this.patch.voice.lfo,
-          mode,
+          shape,
         },
       },
     };
 
-    if (mode !== "sync") {
-      this.noteOnTime = now;
-    }
-    this.refreshModulation(now);
+    this.refreshModulation(this.ctx.currentTime);
+  }
+
+  setLfoRateMode(rateMode: LfoRateMode): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          rateMode,
+        },
+      },
+    };
+
+    this.refreshModulation(this.ctx.currentTime);
   }
 
   setLfoRateHz(rateHz: number): void {
@@ -287,14 +311,14 @@ export class SynthVoice {
     this.refreshModulation(this.ctx.currentTime);
   }
 
-  setLfoPhaseOffset(phaseOffset: number): void {
+  setLfoRateSync(rateSync: LfoSyncDivision): void {
     this.patch = {
       ...this.patch,
       voice: {
         ...this.patch.voice,
         lfo: {
           ...this.patch.voice.lfo,
-          phaseOffset,
+          rateSync,
         },
       },
     };
@@ -302,14 +326,78 @@ export class SynthVoice {
     this.refreshModulation(this.ctx.currentTime);
   }
 
-  setLfoPoints(points: readonly LfoPoint[]): void {
+  setLfoDepth(depth: number): void {
     this.patch = {
       ...this.patch,
       voice: {
         ...this.patch.voice,
         lfo: {
           ...this.patch.voice.lfo,
-          points,
+          depth,
+        },
+      },
+    };
+
+    this.refreshModulation(this.ctx.currentTime);
+  }
+
+  setLfoPhase(phase: number): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          phase,
+        },
+      },
+    };
+
+    this.refreshModulation(this.ctx.currentTime);
+  }
+
+  setLfoRetrigger(retrigger: boolean, now: number): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          retrigger,
+        },
+      },
+    };
+
+    if (retrigger) {
+      this.noteOnTime = now;
+      this.lastLfoSampleTime = null;
+    }
+    this.refreshModulation(now);
+  }
+
+  setLfoBipolar(bipolar: boolean): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          bipolar,
+        },
+      },
+    };
+
+    this.refreshModulation(this.ctx.currentTime);
+  }
+
+  setLfoSmooth(smooth: number): void {
+    this.patch = {
+      ...this.patch,
+      voice: {
+        ...this.patch.voice,
+        lfo: {
+          ...this.patch.voice.lfo,
+          smooth,
         },
       },
     };
@@ -396,15 +484,48 @@ export class SynthVoice {
 
   private getLfoLevelAt(now: number): number {
     const lfo = this.patch.voice.lfo;
-    const phase = getLfoPhaseAtTime(
-      lfo.mode,
+    const rateHz = resolveLfoRateHz(
+      lfo.rateMode,
       lfo.rateHz,
-      lfo.phaseOffset,
+      lfo.rateSync,
+      LFO_SYNC_BPM,
+    );
+    const phase = getLfoPhaseAtTime(
+      rateHz,
+      lfo.phase,
       now,
       this.noteOnTime,
+      lfo.retrigger,
     );
-    const bipolar = sampleLfoShape(lfo.points, phase);
-    return clamp((bipolar + 1) * 0.5, 0, 1);
+    const cycle = getLfoCycleIndexAtTime(
+      rateHz,
+      lfo.phase,
+      now,
+      this.noteOnTime,
+      lfo.retrigger,
+    );
+    const raw = sampleLfoShape(lfo.shape, phase, cycle + this.midi * 37);
+
+    let signedOut = lfo.bipolar
+      ? raw * lfo.depth
+      : (raw + 1) * 0.5 * lfo.depth * 2 - 1;
+
+    const smoothSeconds = lfo.smooth * LFO_SMOOTH_MAX_SECONDS;
+    const previousSampleTime = this.lastLfoSampleTime;
+    if (
+      smoothSeconds > EPSILON_SECONDS &&
+      previousSampleTime !== null &&
+      now > previousSampleTime
+    ) {
+      const dt = now - previousSampleTime;
+      const alpha = Math.exp(-dt / smoothSeconds);
+      signedOut = this.lastLfoSignedOut * alpha + signedOut * (1 - alpha);
+    }
+
+    this.lastLfoSignedOut = signedOut;
+    this.lastLfoSampleTime = now;
+
+    return clamp((signedOut + 1) * 0.5, 0, 1);
   }
 
   private rebuildUnisonStack(
@@ -415,6 +536,13 @@ export class SynthVoice {
     const voices = clamp(Math.round(targetVoices), 1, 16);
     const oldStack = this.activeStack;
     const nextStack = this.createUnisonStack(voices, targetDetune, now, 0);
+
+    if (this.state === "idle") {
+      this.disconnectStack(oldStack);
+      this.activeStack = nextStack;
+      this.currentModUnisonVoices = voices;
+      return;
+    }
 
     for (const osc of nextStack.oscs) {
       osc.start(now);

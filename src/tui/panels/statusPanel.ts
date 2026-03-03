@@ -1,7 +1,6 @@
 import {
   cell,
   divider,
-  paint,
   row,
   statusCell,
   statusCellWithHint,
@@ -12,7 +11,13 @@ import { CELL_SHORTCUTS, LFO_CELL_SHORTCUTS } from "../../app/shortcuts.js";
 import type { AppState, BlockId, CellId } from "../../app/types.js";
 import type { ModRoute as SynthModRoute } from "../../synth/matrix.js";
 import { resolveTargetValue } from "../../synth/modulation.js";
-import { getLfoPhaseAtTime, sampleLfoShape } from "../../synth/lfo.js";
+import {
+  getLfoPhaseAtTime,
+  resolveLfoRateHz,
+  sampleLfoShape,
+} from "../../synth/lfo.js";
+
+const LFO_PREVIEW_BPM = 128;
 
 const toneByWave: Record<AppState["currentWave"], Tone> = {
   sine: "cyan",
@@ -31,10 +36,12 @@ const morphLabelByMode: Record<AppState["oscMorphMode"], string> = {
   smear: "Smear",
 };
 
-const lfoModeLabelByMode: Record<AppState["lfo"]["mode"], string> = {
-  trigger: "Trigger",
-  sync: "Sync",
-  envelope: "Envelope",
+const lfoShapeLabelByShape: Record<AppState["lfo"]["shape"], string> = {
+  sine: "Sine",
+  triangle: "Triangle",
+  saw: "Saw",
+  square: "Square",
+  random: "Random",
 };
 
 const formatSeconds = (value: number): string => {
@@ -45,11 +52,15 @@ const clamp01 = (value: number): number => {
   return Math.max(0, Math.min(1, value));
 };
 
-const toSynthRoutes = (state: AppState): readonly SynthModRoute[] => {
+const toSynthRoutes = (
+  state: AppState,
+  includeLfo: boolean,
+): readonly SynthModRoute[] => {
   const routes: SynthModRoute[] = [];
 
   for (const route of state.modRoutes) {
     if (!route.enabled) continue;
+    if (!includeLfo && route.source === "lfo1") continue;
     if (route.target === "osc.unisonDetuneCents") {
       routes.push({
         source: route.source,
@@ -132,18 +143,37 @@ const hasLfoRouteForTarget = (state: AppState, target: CellId): boolean => {
   );
 };
 
-const getLfoPreviewValue = (state: AppState, nowMs: number): number => {
+const getLfoPreview = (
+  state: AppState,
+  nowMs: number,
+): { signedOut: number; normalized: number } => {
+  if (state.activeKeys.size === 0) {
+    return { signedOut: 0, normalized: 0.5 };
+  }
+
   const nowSeconds = nowMs / 1000;
   const noteOnSeconds = (state.envPreview.gateOnAtMs ?? nowMs) / 1000;
-  const phase = getLfoPhaseAtTime(
-    state.lfo.mode,
+  const rateHz = resolveLfoRateHz(
+    state.lfo.rateMode,
     state.lfo.rateHz,
-    state.lfo.phaseOffset,
+    state.lfo.rateSync,
+    LFO_PREVIEW_BPM,
+  );
+  const phase = getLfoPhaseAtTime(
+    rateHz,
+    state.lfo.phase,
     nowSeconds,
     noteOnSeconds,
+    state.lfo.retrigger,
   );
-  const bipolar = sampleLfoShape(state.lfo.points, phase);
-  return clamp01((bipolar + 1) * 0.5);
+  const raw = sampleLfoShape(state.lfo.shape, phase, 0);
+  const signedOut = state.lfo.bipolar
+    ? raw * state.lfo.depth
+    : (raw + 1) * 0.5 * state.lfo.depth * 2 - 1;
+  const normalized = state.lfo.bipolar
+    ? clamp01((raw * state.lfo.depth + 1) * 0.5)
+    : clamp01((raw + 1) * 0.5 * state.lfo.depth);
+  return { signedOut, normalized };
 };
 
 const getCellValue = (
@@ -152,9 +182,10 @@ const getCellValue = (
   nowMs: number,
 ): string => {
   const octaveLabel = `${state.octaveOffset >= 0 ? "+" : ""}${state.octaveOffset}`;
-  const synthRoutes = toSynthRoutes(state);
+  const lfoActive = state.activeKeys.size > 0;
+  const synthRoutes = toSynthRoutes(state, lfoActive);
   const envPreview = getEnvPreviewLevel(state, nowMs);
-  const lfoPreview = getLfoPreviewValue(state, nowMs);
+  const lfoPreview = getLfoPreview(state, nowMs).normalized;
 
   switch (cellId) {
     case "osc.wave":
@@ -164,7 +195,7 @@ const getCellValue = (
     case "osc.unisonVoices":
       if (
         !hasEnvRouteForTarget(state, "osc.unisonVoices") &&
-        !hasLfoRouteForTarget(state, "osc.unisonVoices")
+        (!lfoActive || !hasLfoRouteForTarget(state, "osc.unisonVoices"))
       ) {
         return String(state.unisonVoices);
       }
@@ -184,7 +215,7 @@ const getCellValue = (
       const base = state.unisonDetuneCents;
       if (
         !hasEnvRouteForTarget(state, "osc.unisonDetuneCents") &&
-        !hasLfoRouteForTarget(state, "osc.unisonDetuneCents")
+        (!lfoActive || !hasLfoRouteForTarget(state, "osc.unisonDetuneCents"))
       ) {
         return `${base.toFixed(1)}c`;
       }
@@ -219,14 +250,24 @@ const getCellValue = (
       const first = routes[0] ?? "none";
       return routes.length > 1 ? `${first}+${routes.length - 1}` : first;
     }
+    case "lfo.shape":
+      return lfoShapeLabelByShape[state.lfo.shape];
+    case "lfo.rateMode":
+      return state.lfo.rateMode === "hz" ? "Hz" : "Sync";
     case "lfo.rate":
-      return `${state.lfo.rateHz.toFixed(2)}Hz`;
+      return state.lfo.rateMode === "hz"
+        ? `${state.lfo.rateHz.toFixed(2)}Hz`
+        : state.lfo.rateSync;
+    case "lfo.depth":
+      return state.lfo.depth.toFixed(2);
     case "lfo.phase":
-      return `${Math.round(state.lfo.phaseOffset * 360)}deg`;
-    case "lfo.mode":
-      return lfoModeLabelByMode[state.lfo.mode];
-    case "lfo.graph":
-      return `${state.lfo.points.length} pts`;
+      return `${Math.round(state.lfo.phase * 360)}deg`;
+    case "lfo.retrigger":
+      return state.lfo.retrigger ? "On" : "Off";
+    case "lfo.bipolar":
+      return state.lfo.bipolar ? "On" : "Off";
+    case "lfo.smooth":
+      return state.lfo.smooth.toFixed(2);
     case "lfo.matrix": {
       const routes = state.modRoutes
         .filter((route) => route.source === "lfo1")
@@ -342,121 +383,86 @@ const renderBlockColumn = (
   ];
 };
 
-const plotLine = (
-  grid: string[][],
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-): void => {
-  const width = grid[0]?.length ?? 0;
-  const height = grid.length;
-  let x = x0;
-  let y = y0;
-  const dx = Math.abs(x1 - x0);
-  const dy = Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1;
-  const sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy;
+const renderLfoPanel = (state: AppState, panelWidth: number): string[] => {
+  const isFocused = state.selectedBlock === "lfo";
+  const nowMs = performance.now();
+  const preview = getLfoPreview(state, nowMs);
+  const out = `${preview.signedOut >= 0 ? "+" : ""}${preview.signedOut.toFixed(2)}`;
 
-  while (true) {
-    if (x >= 0 && x < width && y >= 0 && y < height) {
-      const row = grid[y];
-      const char =
-        x === x1 && y === y1
-          ? (row?.[x] ?? "-")
-          : dx === 0
-            ? "|"
-            : dy === 0
-              ? "-"
-              : sy < 0
-                ? "/"
-                : "\\";
-      if (row !== undefined && row[x] !== "□" && row[x] !== "■") {
-        row[x] = char;
-      }
-    }
-    if (x === x1 && y === y1) break;
-    const e2 = err * 2;
-    if (e2 > -dy) {
-      err -= dy;
-      x += sx;
-    }
-    if (e2 < dx) {
-      err += dx;
-      y += sy;
-    }
-  }
-};
+  const rows: string[] = [
+    statusCell(
+      "LFO",
+      `out ${out}`,
+      panelWidth,
+      isFocused ? "pink" : "gray",
+      true,
+    ),
+  ];
 
-const renderLfoGraph = (
-  state: AppState,
-  width: number,
-  height: number,
-): string[] => {
-  const w = Math.max(8, width);
-  const h = Math.max(4, height);
-  const grid: string[][] = Array.from({ length: h }, () =>
-    Array.from({ length: w }, () => "⣶"),
-  );
-  const toCol = (x: number): number => Math.round(clamp01(x) * (w - 1));
-  const toRow = (y: number): number =>
-    Math.round((1 - clamp01((y + 1) * 0.5)) * (h - 1));
-
-  for (let index = 0; index < state.lfo.points.length - 1; index += 1) {
-    const left = state.lfo.points[index];
-    const right = state.lfo.points[index + 1];
-    if (left === undefined || right === undefined) continue;
-    plotLine(
-      grid,
-      toCol(left.x),
-      toRow(left.y),
-      toCol(right.x),
-      toRow(right.y),
+  const cells = getBlockCells("lfo");
+  for (let index = 0; index < cells.length; index += 1) {
+    const cellMeta = cells[index];
+    if (cellMeta === undefined) continue;
+    const hint = getCellHint(state, "lfo", index, isFocused);
+    const value = getCellValue(state, cellMeta.id, nowMs);
+    const tone = isFocused ? "blue" : "gray";
+    rows.push(
+      hint.length > 0
+        ? statusCellWithHint(
+            cellMeta.label,
+            value,
+            hint,
+            panelWidth,
+            tone,
+            false,
+          )
+        : statusCell(cellMeta.label, value, panelWidth, tone, false),
     );
   }
 
-  for (let index = 0; index < state.lfo.points.length; index += 1) {
-    const point = state.lfo.points[index];
-    if (point === undefined) continue;
-    const col = toCol(point.x);
-    const row = toRow(point.y);
-    const line = grid[row];
-    if (line === undefined || line[col] === undefined) continue;
-    line[col] = index === state.lfo.selectedPointIndex ? "■" : "□";
-  }
-
-  return grid.map((chars) => paint(chars.join(""), "gray", false));
+  return rows;
 };
 
-const renderLfoPanel = (state: AppState, fullWidth: number): string[] => {
-  const title = cell(
-    "LFO",
-    fullWidth,
-    state.selectedBlock === "lfo" ? "pink" : "gray",
-    true,
-  );
-  const nowMs = performance.now();
-  const phase = getLfoPhaseAtTime(
-    state.lfo.mode,
-    state.lfo.rateHz,
-    state.lfo.phaseOffset,
-    nowMs / 1000,
-    (state.envPreview.gateOnAtMs ?? nowMs) / 1000,
-  );
-  const preview = sampleLfoShape(state.lfo.points, phase);
-  const controls = statusCellWithHint(
-    "rate phase mode",
-    `${state.lfo.rateHz.toFixed(2)}Hz ${Math.round(state.lfo.phaseOffset * 360)}deg ${lfoModeLabelByMode[state.lfo.mode]} out ${preview.toFixed(2)}`,
-    state.selectedBlock === "lfo" && state.inputMode === "edit"
-      ? "edit"
-      : "` edit",
-    fullWidth,
-    state.selectedBlock === "lfo" ? "blue" : "gray",
-    false,
-  );
-  const graph = renderLfoGraph(state, fullWidth, 8);
-  return [title, controls, ...graph, divider(fullWidth)];
+const renderBlock = (
+  state: AppState,
+  blockId: BlockId,
+  width: number,
+): string[] => {
+  return blockId === "lfo"
+    ? renderLfoPanel(state, width)
+    : renderBlockColumn(state, blockId, width);
+};
+
+const joinColumns = (columns: readonly string[]): string => {
+  const [first, ...rest] = columns;
+  if (first === undefined) return "";
+  return rest.reduce((acc, col) => row(acc, col), first);
+};
+
+const makeRows = (
+  blocks: readonly BlockId[],
+  minBlockWidth: number,
+  totalWidth: number,
+): BlockId[][] => {
+  const rows: BlockId[][] = [];
+  let current: BlockId[] = [];
+  let usedWidth = 0;
+
+  for (const block of blocks) {
+    const needed = (current.length > 0 ? 1 : 0) + minBlockWidth;
+    if (current.length > 0 && usedWidth + needed > totalWidth) {
+      rows.push(current);
+      current = [block];
+      usedWidth = minBlockWidth;
+      continue;
+    }
+
+    current.push(block);
+    usedWidth += needed;
+  }
+
+  if (current.length > 0) rows.push(current);
+  return rows;
 };
 
 export const renderStatusPanel = (
@@ -464,20 +470,28 @@ export const renderStatusPanel = (
   panelWidth: number,
   fullWidth: number,
 ): string[] => {
-  const leftLines = renderBlockColumn(state, "osc", panelWidth);
-  const rightLines = renderBlockColumn(state, "env", panelWidth);
-  const lineCount = Math.max(leftLines.length, rightLines.length);
-  const rows: string[] = [];
+  const blockOrder: readonly BlockId[] = ["osc", "env", "lfo"];
+  const blockRows = makeRows(blockOrder, panelWidth, fullWidth);
+  const lines: string[] = [];
 
-  for (let i = 0; i < lineCount; i += 1) {
-    rows.push(
-      row(
-        leftLines[i] ?? cell("", panelWidth, "gray"),
-        rightLines[i] ?? cell("", panelWidth, "gray"),
-      ),
-    );
+  for (let rowIndex = 0; rowIndex < blockRows.length; rowIndex += 1) {
+    const blocksInRow = blockRows[rowIndex] ?? [];
+    const rendered = blocksInRow.map((blockId) => {
+      return renderBlock(state, blockId, panelWidth);
+    });
+    const rowHeight = Math.max(0, ...rendered.map((column) => column.length));
+
+    for (let lineIndex = 0; lineIndex < rowHeight; lineIndex += 1) {
+      const rowColumns = rendered.map((column) => {
+        return column[lineIndex] ?? cell("", panelWidth, "gray");
+      });
+      lines.push(joinColumns(rowColumns));
+    }
+
+    if (rowIndex < blockRows.length - 1) {
+      lines.push(divider(fullWidth));
+    }
   }
 
-  rows.push(...renderLfoPanel(state, fullWidth));
-  return rows;
+  return lines;
 };

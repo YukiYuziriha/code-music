@@ -20,9 +20,6 @@ interface ControllerDependencies {
 
 const nextInputMode = (state: AppState): AppState["inputMode"] => {
   if (state.inputMode === "play") return "nav";
-  if (state.inputMode === "nav") {
-    return state.selectedBlock === "lfo" ? "edit" : "play";
-  }
   return "play";
 };
 
@@ -82,10 +79,15 @@ export const createController = (deps: ControllerDependencies) => {
 
   const syncLfo = (): void => {
     const { lfo } = deps.getState();
-    deps.engine.setLfoMode(lfo.mode);
+    deps.engine.setLfoShape(lfo.shape);
+    deps.engine.setLfoRateMode(lfo.rateMode);
     deps.engine.setLfoRateHz(lfo.rateHz);
-    deps.engine.setLfoPhaseOffset(lfo.phaseOffset);
-    deps.engine.setLfoPoints(lfo.points);
+    deps.engine.setLfoRateSync(lfo.rateSync);
+    deps.engine.setLfoDepth(lfo.depth);
+    deps.engine.setLfoPhase(lfo.phase);
+    deps.engine.setLfoRetrigger(lfo.retrigger);
+    deps.engine.setLfoBipolar(lfo.bipolar);
+    deps.engine.setLfoSmooth(lfo.smooth);
   };
 
   const setWave = (wave: WaveForm): void => {
@@ -218,24 +220,54 @@ export const createController = (deps: ControllerDependencies) => {
     key: string,
   ): boolean => {
     if (cellIndex === 0) {
-      deps.dispatch({ type: "lfo/rate/shift", delta: direction });
+      deps.dispatch({ type: "lfo/shape/cycle", delta: direction });
       syncLfo();
       return true;
     }
 
     if (cellIndex === 1) {
-      deps.dispatch({ type: "lfo/phase/shift", delta: direction });
+      deps.dispatch({ type: "lfo/rate-mode/cycle", delta: direction });
       syncLfo();
       return true;
     }
 
     if (cellIndex === 2) {
-      deps.dispatch({ type: "lfo/mode/cycle", delta: direction });
+      deps.dispatch({ type: "lfo/rate/shift", delta: direction });
       syncLfo();
       return true;
     }
 
-    if (cellIndex === 6 && key === "enter") {
+    if (cellIndex === 3) {
+      deps.dispatch({ type: "lfo/depth/shift", delta: direction });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 4) {
+      deps.dispatch({ type: "lfo/phase/shift", delta: direction });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 5) {
+      deps.dispatch({ type: "lfo/retrigger/toggle" });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 6) {
+      deps.dispatch({ type: "lfo/bipolar/toggle" });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 7) {
+      deps.dispatch({ type: "lfo/smooth/shift", delta: direction });
+      syncLfo();
+      return true;
+    }
+
+    if (cellIndex === 8 && key === "enter") {
       const state = deps.getState();
       if (state.matrixMode === "idle" && state.selectedBlock === "lfo") {
         startMatrixPick("lfo1", "lfo", "lfo.matrix");
@@ -428,62 +460,6 @@ export const createController = (deps: ControllerDependencies) => {
     return "none";
   };
 
-  const handleEditKeyDown = (event: KeyboardEvent): ControllerSignal => {
-    const key = event.key.toLowerCase();
-
-    if (key === "escape") {
-      deps.dispatch({ type: "mode/set", mode: "nav" });
-      return "none";
-    }
-
-    if (deps.getState().selectedBlock !== "lfo") {
-      deps.dispatch({ type: "mode/set", mode: "nav" });
-      return "none";
-    }
-
-    if (event.shiftKey && key === "h") {
-      deps.dispatch({ type: "lfo/point/move", dx: -1, dy: 0 });
-      syncLfo();
-      return "none";
-    }
-    if (event.shiftKey && key === "l") {
-      deps.dispatch({ type: "lfo/point/move", dx: 1, dy: 0 });
-      syncLfo();
-      return "none";
-    }
-    if (event.shiftKey && key === "j") {
-      deps.dispatch({ type: "lfo/point/move", dx: 0, dy: -1 });
-      syncLfo();
-      return "none";
-    }
-    if (event.shiftKey && key === "k") {
-      deps.dispatch({ type: "lfo/point/move", dx: 0, dy: 1 });
-      syncLfo();
-      return "none";
-    }
-
-    if (key === "h") {
-      deps.dispatch({ type: "lfo/point/select/cycle", delta: -1 });
-      return "none";
-    }
-    if (key === "l") {
-      deps.dispatch({ type: "lfo/point/select/cycle", delta: 1 });
-      return "none";
-    }
-    if (key === "j") {
-      deps.dispatch({ type: "lfo/point/remove" });
-      syncLfo();
-      return "none";
-    }
-    if (key === "k") {
-      deps.dispatch({ type: "lfo/point/add/right" });
-      syncLfo();
-      return "none";
-    }
-
-    return "none";
-  };
-
   const handleKeyDown = (event: KeyboardEvent): ControllerSignal => {
     const key = event.key.toLowerCase();
     const isUnisonDetuneKey = key === "i" || key === "o";
@@ -492,8 +468,6 @@ export const createController = (deps: ControllerDependencies) => {
     const shouldAllowRepeat =
       isUnisonDetuneKey ||
       isRepeatableShortcutKey(key) ||
-      (deps.getState().inputMode === "edit" &&
-        (key === "h" || key === "j" || key === "k" || key === "l")) ||
       (deps.getState().inputMode === "nav" && isMatrixNavRepeatKey);
 
     if (event.repeat && !shouldAllowRepeat) return "none";
@@ -505,10 +479,6 @@ export const createController = (deps: ControllerDependencies) => {
       }
       deps.dispatch({ type: "mode/set", mode: nextMode });
       return "none";
-    }
-
-    if (deps.getState().inputMode === "edit") {
-      return handleEditKeyDown(event);
     }
 
     if (deps.getState().inputMode === "nav") {

@@ -1,4 +1,4 @@
-import type { LfoMode, LfoPoint } from "./params.js";
+import type { LfoRateMode, LfoShape, LfoSyncDivision } from "./params.js";
 
 const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
@@ -9,51 +9,93 @@ const wrap01 = (value: number): number => {
   return wrapped < 0 ? wrapped + 1 : wrapped;
 };
 
-export const sampleLfoShape = (
-  points: readonly LfoPoint[],
-  phase01: number,
+const beatsPerCycleByDivision: Record<LfoSyncDivision, number> = {
+  "1/1": 4,
+  "1/2": 2,
+  "1/4": 1,
+  "1/8": 0.5,
+  "1/16": 0.25,
+  "1/32": 0.125,
+  "1/4T": 2 / 3,
+  "1/8T": 1 / 3,
+  "1/16T": 1 / 6,
+  "1/4D": 1.5,
+  "1/8D": 0.75,
+};
+
+export const resolveLfoRateHz = (
+  rateMode: LfoRateMode,
+  rateHz: number,
+  rateSync: LfoSyncDivision,
+  bpm: number,
 ): number => {
-  if (points.length === 0) return 0;
-  if (points.length === 1) return clamp(points[0]?.y ?? 0, -1, 1);
-
-  const phase = wrap01(phase01);
-
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const left = points[index];
-    const right = points[index + 1];
-    if (left === undefined || right === undefined) continue;
-    if (phase < left.x || phase > right.x) continue;
-
-    const span = right.x - left.x;
-    if (span <= 1e-6) {
-      return clamp(left.y, -1, 1);
-    }
-
-    const t = clamp((phase - left.x) / span, 0, 1);
-    return clamp(left.y + (right.y - left.y) * t, -1, 1);
+  if (rateMode === "hz") {
+    return clamp(rateHz, 0.01, 64);
   }
 
-  return clamp(points[points.length - 1]?.y ?? 0, -1, 1);
+  const beatsPerCycle = beatsPerCycleByDivision[rateSync] ?? 1;
+  const beatsPerSecond = Math.max(1, bpm) / 60;
+  return clamp(beatsPerSecond / beatsPerCycle, 0.01, 64);
 };
 
 export const getLfoPhaseAtTime = (
-  mode: LfoMode,
   rateHz: number,
   phaseOffset: number,
   nowSeconds: number,
   noteOnSeconds: number,
+  retrigger: boolean,
 ): number => {
   const safeRate = Math.max(0.01, rateHz);
   const offset = wrap01(phaseOffset);
+  const timeBase = retrigger
+    ? Math.max(0, nowSeconds - noteOnSeconds)
+    : Math.max(0, nowSeconds);
+  return wrap01(offset + timeBase * safeRate);
+};
 
-  if (mode === "sync") {
-    return wrap01(offset + nowSeconds * safeRate);
+export const getLfoCycleIndexAtTime = (
+  rateHz: number,
+  phaseOffset: number,
+  nowSeconds: number,
+  noteOnSeconds: number,
+  retrigger: boolean,
+): number => {
+  const safeRate = Math.max(0.01, rateHz);
+  const timeBase = retrigger
+    ? Math.max(0, nowSeconds - noteOnSeconds)
+    : Math.max(0, nowSeconds);
+  return Math.floor(phaseOffset + timeBase * safeRate);
+};
+
+const pseudoRandomSigned = (seed: number): number => {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453123;
+  const fract = x - Math.floor(x);
+  return fract * 2 - 1;
+};
+
+export const sampleLfoShape = (
+  shape: LfoShape,
+  phase01: number,
+  randomSeed = 0,
+): number => {
+  const phase = wrap01(phase01);
+
+  if (shape === "sine") {
+    return Math.sin(phase * Math.PI * 2);
   }
 
-  const elapsed = Math.max(0, nowSeconds - noteOnSeconds);
-  const progressed = offset + elapsed * safeRate;
-  if (mode === "envelope") {
-    return clamp(progressed, 0, 1);
+  if (shape === "triangle") {
+    const centered = phase < 0.5 ? phase * 4 - 1 : 3 - phase * 4;
+    return clamp(centered, -1, 1);
   }
-  return wrap01(progressed);
+
+  if (shape === "saw") {
+    return clamp(phase * 2 - 1, -1, 1);
+  }
+
+  if (shape === "square") {
+    return phase < 0.5 ? 1 : -1;
+  }
+
+  return pseudoRandomSigned(randomSeed);
 };

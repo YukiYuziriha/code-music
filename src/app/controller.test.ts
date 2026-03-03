@@ -55,10 +55,15 @@ const createEngineMock = (): { engine: AudioEngine; calls: EngineCalls } => {
     setUnisonVoices: () => {},
     setUnisonDetuneCents: () => {},
     setOscMorphMode: () => {},
-    setLfoMode: () => {},
+    setLfoShape: () => {},
+    setLfoRateMode: () => {},
     setLfoRateHz: () => {},
-    setLfoPhaseOffset: () => {},
-    setLfoPoints: () => {},
+    setLfoRateSync: () => {},
+    setLfoDepth: () => {},
+    setLfoPhase: () => {},
+    setLfoRetrigger: () => {},
+    setLfoBipolar: () => {},
+    setLfoSmooth: () => {},
     setMaxVoices: () => {},
     setModRoutes: (routes: readonly unknown[]) => {
       calls.setModRoutes.push([...routes]);
@@ -144,7 +149,7 @@ describe("app/controller", () => {
     expect(state.inputMode).toBe("play");
   });
 
-  test("cycles backtick mode through play/nav/edit on LFO", () => {
+  test("cycles backtick mode through play/nav/play on LFO", () => {
     let state = applyAction(createInitialState(), {
       type: "nav/block/select",
       block: "lfo",
@@ -161,7 +166,7 @@ describe("app/controller", () => {
 
     controller.handleKeyDown(keyEvent("`"));
     controller.handleKeyDown(keyEvent("`"));
-    expect(state.inputMode).toBe("edit");
+    expect(state.inputMode).toBe("play");
   });
 
   test("starts matrix pick flow from ENV matrix cell", () => {

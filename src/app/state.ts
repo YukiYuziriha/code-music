@@ -7,7 +7,12 @@ import {
   type BlockId,
   type ModRoute,
 } from "./types.js";
-import type { OscMorphMode } from "../synth/polySynth.js";
+import type {
+  LfoRateMode,
+  LfoShape,
+  LfoSyncDivision,
+  OscMorphMode,
+} from "../synth/polySynth.js";
 
 const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
@@ -37,11 +42,9 @@ const DEFAULT_UNISON_DETUNE_STEP_CENTS = 1;
 const DEFAULT_ENV_TIME_STEP = 0.01;
 const DEFAULT_ENV_SUSTAIN_STEP = 0.02;
 const DEFAULT_LFO_RATE_STEP_HZ = 0.1;
+const DEFAULT_LFO_DEPTH_STEP = 0.05;
 const DEFAULT_LFO_PHASE_STEP = 0.02;
-const DEFAULT_LFO_POINT_X_STEP = 0.02;
-const DEFAULT_LFO_POINT_Y_STEP = 0.05;
-const MIN_LFO_POINTS = 2;
-const MIN_POINT_SPACING = 0.02;
+const DEFAULT_LFO_SMOOTH_STEP = 0.05;
 
 const clamp01 = (value: number): number => {
   return clamp(value, 0, 1);
@@ -86,10 +89,26 @@ const oscMorphModes: readonly OscMorphMode[] = [
   "smear",
 ];
 const defaultOscMorphMode: OscMorphMode = "none";
-const lfoModes: readonly AppState["lfo"]["mode"][] = [
-  "trigger",
-  "sync",
-  "envelope",
+const lfoShapes: readonly LfoShape[] = [
+  "sine",
+  "triangle",
+  "saw",
+  "square",
+  "random",
+];
+const lfoRateModes: readonly LfoRateMode[] = ["hz", "sync"];
+const lfoSyncDivisions: readonly LfoSyncDivision[] = [
+  "1/1",
+  "1/2",
+  "1/4",
+  "1/8",
+  "1/16",
+  "1/32",
+  "1/4T",
+  "1/8T",
+  "1/16T",
+  "1/4D",
+  "1/8D",
 ];
 
 const cycleOscMorphMode = (
@@ -103,31 +122,47 @@ const cycleOscMorphMode = (
   return oscMorphModes[nextIndex] ?? defaultOscMorphMode;
 };
 
-const cycleLfoMode = (
-  current: AppState["lfo"]["mode"],
-  delta: -1 | 1,
-): AppState["lfo"]["mode"] => {
-  const currentIndex = lfoModes.indexOf(current);
-  if (currentIndex < 0) return "trigger";
-  const nextIndex = (currentIndex + delta + lfoModes.length) % lfoModes.length;
-  return lfoModes[nextIndex] ?? "trigger";
+const cycleLfoShape = (current: LfoShape, delta: -1 | 1): LfoShape => {
+  const currentIndex = lfoShapes.indexOf(current);
+  if (currentIndex < 0) return "sine";
+  const nextIndex =
+    (currentIndex + delta + lfoShapes.length) % lfoShapes.length;
+  return lfoShapes[nextIndex] ?? "sine";
 };
 
-const cycleIndex = (current: number, count: number, delta: -1 | 1): number => {
-  if (count <= 0) return 0;
-  return (current + delta + count) % count;
+const cycleLfoRateMode = (current: LfoRateMode, delta: -1 | 1): LfoRateMode => {
+  const currentIndex = lfoRateModes.indexOf(current);
+  if (currentIndex < 0) return "hz";
+  const nextIndex =
+    (currentIndex + delta + lfoRateModes.length) % lfoRateModes.length;
+  return lfoRateModes[nextIndex] ?? "hz";
+};
+
+const cycleLfoSyncDivision = (
+  current: LfoSyncDivision,
+  delta: -1 | 1,
+): LfoSyncDivision => {
+  const currentIndex = lfoSyncDivisions.indexOf(current);
+  if (currentIndex < 0) return "1/4";
+  const nextIndex =
+    (currentIndex + delta + lfoSyncDivisions.length) % lfoSyncDivisions.length;
+  return lfoSyncDivisions[nextIndex] ?? "1/4";
 };
 
 const clampLfoRateHz = (value: number): number => {
   return clamp(value, 0.01, 64);
 };
 
-const clampLfoPhaseOffset = (value: number): number => {
+const clampLfoDepth = (value: number): number => {
   return clamp(value, 0, 1);
 };
 
-const clampLfoY = (value: number): number => {
-  return clamp(value, -1, 1);
+const clampLfoPhase = (value: number): number => {
+  return clamp(value, 0, 1);
+};
+
+const clampLfoSmooth = (value: number): number => {
+  return clamp(value, 0, 1);
 };
 
 const cycleBlock = (current: BlockId, delta: -1 | 1): BlockId => {
@@ -177,79 +212,6 @@ const cycleTargetableBlock = (current: BlockId, delta: -1 | 1): BlockId => {
   return current;
 };
 
-const moveSelectedLfoPoint = (
-  state: AppState,
-  dx: number,
-  dy: number,
-): AppState => {
-  const points = state.lfo.points.slice();
-  const index = state.lfo.selectedPointIndex;
-  const point = points[index];
-  if (point === undefined) return state;
-
-  const isFirst = index === 0;
-  const isLast = index === points.length - 1;
-  const prevX = points[index - 1]?.x ?? 0;
-  const nextX = points[index + 1]?.x ?? 1;
-  const minX = isFirst ? 0 : prevX + MIN_POINT_SPACING;
-  const maxX = isLast ? 1 : nextX - MIN_POINT_SPACING;
-
-  const nextPoint = {
-    x: isFirst || isLast ? point.x : clamp(point.x + dx, minX, maxX),
-    y: clampLfoY(point.y + dy),
-  };
-  points[index] = nextPoint;
-
-  return {
-    ...state,
-    lfo: {
-      ...state.lfo,
-      points,
-    },
-  };
-};
-
-const addLfoPointToRight = (state: AppState): AppState => {
-  const points = state.lfo.points;
-  const index = state.lfo.selectedPointIndex;
-  const left = points[index];
-  const right = points[index + 1];
-  if (left === undefined || right === undefined) return state;
-
-  const x = (left.x + right.x) * 0.5;
-  if (right.x - left.x < MIN_POINT_SPACING * 2) return state;
-  const y = (left.y + right.y) * 0.5;
-
-  const nextPoints = points.slice();
-  nextPoints.splice(index + 1, 0, { x, y });
-  return {
-    ...state,
-    lfo: {
-      ...state.lfo,
-      points: nextPoints,
-      selectedPointIndex: index + 1,
-    },
-  };
-};
-
-const removeSelectedLfoPoint = (state: AppState): AppState => {
-  const points = state.lfo.points;
-  const index = state.lfo.selectedPointIndex;
-  if (points.length <= MIN_LFO_POINTS) return state;
-  if (index <= 0 || index >= points.length - 1) return state;
-
-  const nextPoints = points.slice();
-  nextPoints.splice(index, 1);
-  return {
-    ...state,
-    lfo: {
-      ...state.lfo,
-      points: nextPoints,
-      selectedPointIndex: Math.max(0, index - 1),
-    },
-  };
-};
-
 const hasRoute = (
   routes: readonly ModRoute[],
   source: "env1" | "lfo1",
@@ -278,17 +240,15 @@ export const createInitialState = (): AppState => {
       release: 0.15,
     },
     lfo: {
-      mode: "trigger",
+      shape: "sine",
+      rateMode: "hz",
       rateHz: 2,
-      phaseOffset: 0,
-      points: [
-        { x: 0, y: 0 },
-        { x: 0.25, y: 1 },
-        { x: 0.5, y: 0 },
-        { x: 0.75, y: -1 },
-        { x: 1, y: 0 },
-      ],
-      selectedPointIndex: 0,
+      rateSync: "1/4",
+      depth: 1,
+      phase: 0,
+      retrigger: true,
+      bipolar: true,
+      smooth: 0,
     },
     inputMode: "play",
     selectedBlock: "osc",
@@ -520,12 +480,49 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
       };
     }
     case "lfo/rate/shift": {
+      const direction = action.delta < 0 ? -1 : 1;
       return {
         ...state,
         lfo: {
           ...state.lfo,
-          rateHz: clampLfoRateHz(
-            state.lfo.rateHz + action.delta * DEFAULT_LFO_RATE_STEP_HZ,
+          rateHz:
+            state.lfo.rateMode === "hz"
+              ? clampLfoRateHz(
+                  state.lfo.rateHz + action.delta * DEFAULT_LFO_RATE_STEP_HZ,
+                )
+              : state.lfo.rateHz,
+          rateSync:
+            state.lfo.rateMode === "sync"
+              ? cycleLfoSyncDivision(state.lfo.rateSync, direction)
+              : state.lfo.rateSync,
+        },
+      };
+    }
+    case "lfo/shape/cycle": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          shape: cycleLfoShape(state.lfo.shape, action.delta),
+        },
+      };
+    }
+    case "lfo/rate-mode/cycle": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          rateMode: cycleLfoRateMode(state.lfo.rateMode, action.delta),
+        },
+      };
+    }
+    case "lfo/depth/shift": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          depth: clampLfoDepth(
+            state.lfo.depth + action.delta * DEFAULT_LFO_DEPTH_STEP,
           ),
         },
       };
@@ -535,46 +532,40 @@ export const applyAction = (state: AppState, action: AppAction): AppState => {
         ...state,
         lfo: {
           ...state.lfo,
-          phaseOffset: clampLfoPhaseOffset(
-            state.lfo.phaseOffset + action.delta * DEFAULT_LFO_PHASE_STEP,
+          phase: clampLfoPhase(
+            state.lfo.phase + action.delta * DEFAULT_LFO_PHASE_STEP,
           ),
         },
       };
     }
-    case "lfo/mode/cycle": {
+    case "lfo/retrigger/toggle": {
       return {
         ...state,
         lfo: {
           ...state.lfo,
-          mode: cycleLfoMode(state.lfo.mode, action.delta),
+          retrigger: !state.lfo.retrigger,
         },
       };
     }
-    case "lfo/point/select/cycle": {
+    case "lfo/bipolar/toggle": {
       return {
         ...state,
         lfo: {
           ...state.lfo,
-          selectedPointIndex: cycleIndex(
-            state.lfo.selectedPointIndex,
-            state.lfo.points.length,
-            action.delta,
+          bipolar: !state.lfo.bipolar,
+        },
+      };
+    }
+    case "lfo/smooth/shift": {
+      return {
+        ...state,
+        lfo: {
+          ...state.lfo,
+          smooth: clampLfoSmooth(
+            state.lfo.smooth + action.delta * DEFAULT_LFO_SMOOTH_STEP,
           ),
         },
       };
-    }
-    case "lfo/point/add/right": {
-      return addLfoPointToRight(state);
-    }
-    case "lfo/point/remove": {
-      return removeSelectedLfoPoint(state);
-    }
-    case "lfo/point/move": {
-      return moveSelectedLfoPoint(
-        state,
-        action.dx * DEFAULT_LFO_POINT_X_STEP,
-        action.dy * DEFAULT_LFO_POINT_Y_STEP,
-      );
     }
     case "wave/set": {
       return { ...state, currentWave: action.wave };
