@@ -12,7 +12,10 @@ import { getBlockCells, getCellShortLabel } from "../../app/blocks.js";
 import { CELL_SHORTCUTS, LFO_CELL_SHORTCUTS } from "../../app/shortcuts.js";
 import type { AppState, BlockId, CellId } from "../../app/types.js";
 import type { ModRoute as SynthModRoute } from "../../synth/matrix.js";
-import { resolveTargetValue } from "../../synth/modulation.js";
+import {
+  isCenteredModSource,
+  resolveTargetValue,
+} from "../../synth/modulation.js";
 import {
   getLfoPhaseAtTime,
   resolveLfoRateHz,
@@ -121,7 +124,7 @@ const toSynthRoutes = (
         source: route.source,
         target: "osc.unisonDetuneCents",
         amount: route.amount,
-        bipolar: true,
+        bipolar: isCenteredModSource(route.source),
       });
       continue;
     }
@@ -131,7 +134,7 @@ const toSynthRoutes = (
         source: route.source,
         target: "osc.unisonVoices",
         amount: route.amount,
-        bipolar: false,
+        bipolar: isCenteredModSource(route.source),
       });
     }
   }

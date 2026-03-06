@@ -1,4 +1,4 @@
-import type { ModRoute, ModTarget } from "./matrix.js";
+import type { ModRoute, ModSource, ModTarget } from "./matrix.js";
 
 export type ModSourceValue = {
   readonly env1: number;
@@ -11,8 +11,17 @@ export interface ModTargetDescriptor {
   readonly min: number;
   readonly max: number;
   readonly depth: number;
+  readonly centered: boolean;
   readonly quantize: "none" | "round";
 }
+
+export interface ResolveTargetOptions {
+  readonly quantize?: boolean;
+}
+
+export const isCenteredModSource = (source: ModSource): boolean => {
+  return source === "lfo1" || source === "random1";
+};
 
 const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
@@ -32,7 +41,8 @@ export const MOD_TARGETS: Readonly<Record<ModTarget, ModTargetDescriptor>> = {
     mode: "continuous",
     min: 1,
     max: 16,
-    depth: 8,
+    depth: 15,
+    centered: true,
     quantize: "round",
   },
   "osc.unisonDetuneCents": {
@@ -41,6 +51,7 @@ export const MOD_TARGETS: Readonly<Record<ModTarget, ModTargetDescriptor>> = {
     min: 0,
     max: 100,
     depth: 50,
+    centered: false,
     quantize: "none",
   },
   "osc.level": {
@@ -49,6 +60,7 @@ export const MOD_TARGETS: Readonly<Record<ModTarget, ModTargetDescriptor>> = {
     min: 0,
     max: 1,
     depth: 1,
+    centered: false,
     quantize: "none",
   },
   "amp.level": {
@@ -57,6 +69,7 @@ export const MOD_TARGETS: Readonly<Record<ModTarget, ModTargetDescriptor>> = {
     min: 0,
     max: 1,
     depth: 1,
+    centered: false,
     quantize: "none",
   },
 };
@@ -97,13 +110,40 @@ const quantizeValue = (
   return quantize === "round" ? Math.round(value) : value;
 };
 
-export const mapTargetValue = (
+const mapCenteredTargetValue = (
   descriptor: ModTargetDescriptor,
   baseValue: number,
   normalizedContribution: number,
 ): number => {
-  const unclamped = baseValue + normalizedContribution * descriptor.depth;
-  const quantized = quantizeValue(unclamped, descriptor.quantize);
+  const signedContribution = clampSigned(normalizedContribution);
+  const distance =
+    signedContribution >= 0
+      ? descriptor.max - baseValue
+      : baseValue - descriptor.min;
+  return baseValue + signedContribution * distance;
+};
+
+export const resolveTargetContribution = (
+  routes: readonly ModRoute[],
+  target: ModTarget,
+  sourceValue: ModSourceValue,
+): number => {
+  return sumTargetContribution(routes, target, sourceValue);
+};
+
+export const mapTargetValue = (
+  descriptor: ModTargetDescriptor,
+  baseValue: number,
+  normalizedContribution: number,
+  options: ResolveTargetOptions = {},
+): number => {
+  const unclamped = descriptor.centered
+    ? mapCenteredTargetValue(descriptor, baseValue, normalizedContribution)
+    : baseValue + normalizedContribution * descriptor.depth;
+  const quantized =
+    (options.quantize ?? true)
+      ? quantizeValue(unclamped, descriptor.quantize)
+      : unclamped;
   return clamp(quantized, descriptor.min, descriptor.max);
 };
 
@@ -112,10 +152,11 @@ export const resolveTargetValue = (
   target: ModTarget,
   baseValue: number,
   sourceValue: ModSourceValue,
+  options: ResolveTargetOptions = {},
 ): number => {
   const descriptor = MOD_TARGETS[target];
-  const contribution = sumTargetContribution(routes, target, sourceValue);
-  return mapTargetValue(descriptor, baseValue, contribution);
+  const contribution = resolveTargetContribution(routes, target, sourceValue);
+  return mapTargetValue(descriptor, baseValue, contribution, options);
 };
 
 export const resolveNoteOnUnisonVoices = (

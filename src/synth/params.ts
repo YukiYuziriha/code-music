@@ -97,7 +97,7 @@ export interface SynthPatch {
 
 const MIN_VOICES = 1;
 const MAX_VOICES = 64;
-const MAX_UNISON_VOICES = 16;
+export const MAX_UNISON_VOICES = 16;
 const MAX_ENV_SECONDS = 8;
 const MAX_UNISON_DETUNE_CENTS = 100;
 const MIN_LFO_RATE_HZ = 0.01;

@@ -12,9 +12,11 @@ describe("synth/modulation", () => {
     const voices = MOD_TARGETS["osc.unisonVoices"];
     const detune = MOD_TARGETS["osc.unisonDetuneCents"];
 
-    expect(mapTargetValue(voices, 3, 0.49)).toBe(7);
+    expect(mapTargetValue(voices, 3, 0.49)).toBe(9);
     expect(mapTargetValue(voices, 15, 1)).toBe(16);
     expect(mapTargetValue(voices, 1, -1)).toBe(1);
+    expect(mapTargetValue(voices, 8, -1)).toBe(1);
+    expect(mapTargetValue(voices, 8, 1)).toBe(16);
 
     expect(mapTargetValue(detune, 10, 0.5)).toBe(35);
     expect(mapTargetValue(detune, 80, 1)).toBe(100);
@@ -25,22 +27,43 @@ describe("synth/modulation", () => {
       {
         source: "lfo1",
         target: "osc.unisonVoices",
+        amount: 1,
+        bipolar: true,
+      },
+    ];
+
+    const high = resolveTargetValue(routes, "osc.unisonVoices", 8, {
+      env1: 0,
+      lfo1: 1,
+    });
+    const low = resolveTargetValue(routes, "osc.unisonVoices", 8, {
+      env1: 0,
+      lfo1: 0,
+    });
+
+    expect(high).toBe(16);
+    expect(low).toBe(1);
+  });
+
+  test("resolveTargetValue returns fractional centered voices when quantize is off", () => {
+    const routes: readonly ModRoute[] = [
+      {
+        source: "lfo1",
+        target: "osc.unisonVoices",
         amount: 0.5,
         bipolar: true,
       },
     ];
 
-    const high = resolveTargetValue(routes, "osc.unisonVoices", 2, {
-      env1: 0,
-      lfo1: 1,
-    });
-    const low = resolveTargetValue(routes, "osc.unisonVoices", 2, {
-      env1: 0,
-      lfo1: 0,
-    });
+    const value = resolveTargetValue(
+      routes,
+      "osc.unisonVoices",
+      8,
+      { env1: 0, lfo1: 0 },
+      { quantize: false },
+    );
 
-    expect(high).toBe(6);
-    expect(low).toBe(1);
+    expect(value).toBe(4.5);
   });
 
   test("resolveTargetValue clamps summed contribution", () => {
@@ -78,6 +101,6 @@ describe("synth/modulation", () => {
     ];
 
     const resolved = resolveNoteOnUnisonVoices(routes, 2);
-    expect(resolved).toBe(10);
+    expect(resolved).toBe(16);
   });
 });

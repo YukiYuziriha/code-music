@@ -3,7 +3,7 @@ import {
   type MorphChain,
   scheduleAmpEnvelopeStart,
   scheduleAmpRelease,
-  unisonGainScale,
+  unisonGainScaleForWeights,
 } from "./blocks.js";
 import {
   getLfoCycleIndexAtTime,
@@ -13,6 +13,7 @@ import {
 } from "./lfo.js";
 import type { ModRoute } from "./matrix.js";
 import { resolveTargetValue } from "./modulation.js";
+import { buildUnisonLayout } from "./unison.js";
 import type {
   LfoRateMode,
   LfoShape,
@@ -21,7 +22,8 @@ import type {
   SynthPatch,
   WaveForm,
 } from "./params.js";
-import { clamp01, midiToHz } from "./utils.js";
+import { MAX_UNISON_VOICES } from "./params.js";
+import { clamp01 } from "./utils.js";
 
 interface SynthVoiceOptions {
   ctx: AudioContext;
@@ -35,16 +37,17 @@ interface SynthVoiceOptions {
 
 type VoiceState = "idle" | "active" | "released" | "stopped";
 
-interface UnisonStack {
+interface UnisonPool {
   readonly oscs: OscillatorNode[];
+  readonly voiceGains: GainNode[];
   readonly mix: GainNode;
 }
 
 const EPSILON_SECONDS = 1e-6;
-const UNISON_CROSSFADE_SECONDS = 0.012;
 const MODULATION_TICK_MS = 16;
 const LFO_SYNC_BPM = 128;
 const LFO_SMOOTH_MAX_SECONDS = 0.12;
+const UNISON_SMOOTH_SECONDS = 0.02;
 
 const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
@@ -79,20 +82,6 @@ const getPreReleaseEnvLevel = (
   return env.sustain;
 };
 
-const buildUnisonOffsets = (voices: number, detuneCents: number): number[] => {
-  if (voices <= 1 || detuneCents <= 0) {
-    return [0];
-  }
-
-  const center = (voices - 1) / 2;
-  const scale = center === 0 ? 0 : 1 / center;
-  const offsets: number[] = [];
-  for (let index = 0; index < voices; index += 1) {
-    offsets.push((index - center) * scale * detuneCents);
-  }
-  return offsets;
-};
-
 export class SynthVoice {
   readonly midi: number;
 
@@ -104,16 +93,12 @@ export class SynthVoice {
   private readonly onEnded: (midi: number) => void;
   private readonly lifecycleOsc: OscillatorNode;
 
-  private activeStack: UnisonStack;
-  private readonly retiringStacks = new Set<UnisonStack>();
-  private readonly retireTimeouts = new Set<ReturnType<typeof setTimeout>>();
+  private readonly unisonPool: UnisonPool;
 
   private modRoutes: readonly ModRoute[];
   private noteOnTime = 0;
   private releasedAt: number | null = null;
   private releaseStartEnvLevel = 0;
-  private currentModUnisonDetune = 0;
-  private currentModUnisonVoices = 1;
   private lastLfoSignedOut = 0;
   private lastLfoSampleTime: number | null = null;
   private modulationTimer: ReturnType<typeof setInterval> | null = null;
@@ -132,10 +117,12 @@ export class SynthVoice {
       midi: options.midi,
       patch: this.patch,
       output: options.output,
+      unisonPoolVoices: MAX_UNISON_VOICES,
     });
 
-    this.activeStack = {
+    this.unisonPool = {
       oscs: blocks.oscs,
+      voiceGains: blocks.voiceGains,
       mix: blocks.oscMix,
     };
     this.morph = blocks.morph;
@@ -145,19 +132,11 @@ export class SynthVoice {
     lifecycleOsc.frequency.setValueAtTime(0, this.ctx.currentTime);
     this.lifecycleOsc = lifecycleOsc;
 
-    this.currentModUnisonDetune = this.patch.voice.osc.unisonDetuneCents;
-    this.currentModUnisonVoices = Math.max(1, this.activeStack.oscs.length);
-
     this.lifecycleOsc.onended = () => {
       if (this.state === "stopped") return;
       this.state = "stopped";
       this.stopModulationTimer();
-      this.clearRetireTimeouts();
-      this.disconnectStack(this.activeStack);
-      for (const stack of this.retiringStacks) {
-        this.disconnectStack(stack);
-      }
-      this.retiringStacks.clear();
+      this.disconnectPool(this.unisonPool);
       this.amp.disconnect();
       this.onEnded(this.midi);
     };
@@ -176,11 +155,11 @@ export class SynthVoice {
     scheduleAmpEnvelopeStart(
       this.amp,
       now,
-      this.velocity * unisonGainScale(this.patch.voice.osc.unisonVoices),
+      this.velocity,
       this.patch.voice.ampEnv,
     );
     this.lifecycleOsc.start(now);
-    for (const osc of this.activeStack.oscs) {
+    for (const osc of this.unisonPool.oscs) {
       osc.start(now);
     }
     this.startModulationTimer();
@@ -224,10 +203,8 @@ export class SynthVoice {
       },
     };
 
-    for (const stack of this.allStacks()) {
-      for (const osc of stack.oscs) {
-        osc.type = wave;
-      }
+    for (const osc of this.unisonPool.oscs) {
+      osc.type = wave;
     }
   }
 
@@ -421,13 +398,11 @@ export class SynthVoice {
   }
 
   private stopAt(time: number): void {
-    for (const stack of this.allStacks()) {
-      for (const osc of stack.oscs) {
-        try {
-          osc.stop(time);
-        } catch {
-          continue;
-        }
+    for (const osc of this.unisonPool.oscs) {
+      try {
+        osc.stop(time);
+      } catch {
+        continue;
       }
     }
 
@@ -463,23 +438,16 @@ export class SynthVoice {
       "osc.unisonDetuneCents",
       this.patch.voice.osc.unisonDetuneCents,
       { env1: envValue, lfo1: lfoValue },
+      { quantize: false },
     );
-    const targetVoices = Math.round(
-      resolveTargetValue(
-        this.modRoutes,
-        "osc.unisonVoices",
-        this.patch.voice.osc.unisonVoices,
-        { env1: envValue, lfo1: lfoValue },
-      ),
+    const targetVoices = resolveTargetValue(
+      this.modRoutes,
+      "osc.unisonVoices",
+      this.patch.voice.osc.unisonVoices,
+      { env1: envValue, lfo1: lfoValue },
     );
 
-    if (targetVoices !== this.currentModUnisonVoices) {
-      this.rebuildUnisonStack(targetVoices, targetDetune, now);
-    } else {
-      this.applyUnisonDetuneToStack(this.activeStack, targetDetune, now, true);
-    }
-
-    this.currentModUnisonDetune = targetDetune;
+    this.applyUnisonState(targetVoices, targetDetune, now);
   }
 
   private getLfoLevelAt(now: number): number {
@@ -528,105 +496,55 @@ export class SynthVoice {
     return clamp((signedOut + 1) * 0.5, 0, 1);
   }
 
-  private rebuildUnisonStack(
+  private applyUnisonState(
     targetVoices: number,
     targetDetune: number,
     now: number,
   ): void {
-    const voices = clamp(Math.round(targetVoices), 1, 16);
-    const oldStack = this.activeStack;
-    const nextStack = this.createUnisonStack(voices, targetDetune, now, 0);
+    const layout = buildUnisonLayout(targetVoices, targetDetune);
 
+    for (let index = 0; index < this.unisonPool.oscs.length; index += 1) {
+      const osc = this.unisonPool.oscs[index];
+      const voiceGain = this.unisonPool.voiceGains[index];
+      if (osc === undefined || voiceGain === undefined) continue;
+
+      const detune =
+        this.patch.voice.osc.detuneCents + (layout.offsets[index] ?? 0);
+      const gain = layout.weights[index] ?? 0;
+
+      osc.detune.cancelScheduledValues(now);
+      osc.detune.setValueAtTime(osc.detune.value, now);
+      voiceGain.gain.cancelScheduledValues(now);
+      voiceGain.gain.setValueAtTime(voiceGain.gain.value, now);
+
+      if (this.state === "idle") {
+        osc.detune.setValueAtTime(detune, now);
+        voiceGain.gain.setValueAtTime(gain, now);
+        continue;
+      }
+
+      osc.detune.linearRampToValueAtTime(detune, now + UNISON_SMOOTH_SECONDS);
+      voiceGain.gain.linearRampToValueAtTime(gain, now + UNISON_SMOOTH_SECONDS);
+    }
+
+    const compensation = unisonGainScaleForWeights(layout.weights);
+    this.unisonPool.mix.gain.cancelScheduledValues(now);
+    this.unisonPool.mix.gain.setValueAtTime(
+      this.unisonPool.mix.gain.value,
+      now,
+    );
     if (this.state === "idle") {
-      this.disconnectStack(oldStack);
-      this.activeStack = nextStack;
-      this.currentModUnisonVoices = voices;
+      this.unisonPool.mix.gain.setValueAtTime(compensation, now);
       return;
     }
-
-    for (const osc of nextStack.oscs) {
-      osc.start(now);
-    }
-
-    nextStack.mix.gain.setValueAtTime(0, now);
-    nextStack.mix.gain.linearRampToValueAtTime(
-      1,
-      now + UNISON_CROSSFADE_SECONDS,
+    this.unisonPool.mix.gain.linearRampToValueAtTime(
+      compensation,
+      now + UNISON_SMOOTH_SECONDS,
     );
-
-    oldStack.mix.gain.cancelScheduledValues(now);
-    oldStack.mix.gain.setValueAtTime(oldStack.mix.gain.value, now);
-    oldStack.mix.gain.linearRampToValueAtTime(
-      0,
-      now + UNISON_CROSSFADE_SECONDS,
-    );
-
-    this.activeStack = nextStack;
-    this.currentModUnisonVoices = voices;
-    this.retiringStacks.add(oldStack);
-
-    const timeoutId = setTimeout(
-      () => {
-        this.retiringStacks.delete(oldStack);
-        for (const osc of oldStack.oscs) {
-          try {
-            osc.stop(this.ctx.currentTime + 0.001);
-          } catch {
-            continue;
-          }
-        }
-        this.disconnectStack(oldStack);
-        this.retireTimeouts.delete(timeoutId);
-      },
-      Math.ceil((UNISON_CROSSFADE_SECONDS + 0.03) * 1000),
-    );
-    this.retireTimeouts.add(timeoutId);
   }
 
-  private applyUnisonDetuneToStack(
-    stack: UnisonStack,
-    unisonDetuneCents: number,
-    now: number,
-    smooth: boolean,
-  ): void {
-    const offsets = buildUnisonOffsets(stack.oscs.length, unisonDetuneCents);
-    for (let index = 0; index < stack.oscs.length; index += 1) {
-      const osc = stack.oscs[index];
-      if (osc === undefined) continue;
-      const detune = this.patch.voice.osc.detuneCents + (offsets[index] ?? 0);
-      if (smooth) {
-        osc.detune.linearRampToValueAtTime(detune, now + 0.02);
-      } else {
-        osc.detune.setValueAtTime(detune, now);
-      }
-    }
-  }
-
-  private createUnisonStack(
-    voices: number,
-    unisonDetuneCents: number,
-    now: number,
-    initialGain: number,
-  ): UnisonStack {
-    const mix = this.ctx.createGain();
-    mix.gain.setValueAtTime(initialGain, now);
-    mix.connect(this.morph.input);
-
-    const offsets = buildUnisonOffsets(voices, unisonDetuneCents);
-    const oscs = offsets.map((offset) => {
-      const osc = this.ctx.createOscillator();
-      osc.type = this.patch.voice.osc.wave;
-      osc.frequency.setValueAtTime(midiToHz(this.midi), now);
-      osc.detune.setValueAtTime(this.patch.voice.osc.detuneCents + offset, now);
-      osc.connect(mix);
-      return osc;
-    });
-
-    return { oscs, mix };
-  }
-
-  private disconnectStack(stack: UnisonStack): void {
-    for (const osc of stack.oscs) {
+  private disconnectPool(pool: UnisonPool): void {
+    for (const osc of pool.oscs) {
       try {
         osc.disconnect();
       } catch {
@@ -634,14 +552,13 @@ export class SynthVoice {
       }
     }
     try {
-      stack.mix.disconnect();
+      for (const voiceGain of pool.voiceGains) {
+        voiceGain.disconnect();
+      }
+      pool.mix.disconnect();
     } catch {
       return;
     }
-  }
-
-  private allStacks(): readonly UnisonStack[] {
-    return [this.activeStack, ...this.retiringStacks];
   }
 
   private startModulationTimer(): void {
@@ -656,12 +573,5 @@ export class SynthVoice {
     if (this.modulationTimer === null) return;
     clearInterval(this.modulationTimer);
     this.modulationTimer = null;
-  }
-
-  private clearRetireTimeouts(): void {
-    for (const timeoutId of this.retireTimeouts) {
-      clearTimeout(timeoutId);
-    }
-    this.retireTimeouts.clear();
   }
 }

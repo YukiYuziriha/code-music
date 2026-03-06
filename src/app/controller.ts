@@ -2,6 +2,7 @@ import type {
   ModRoute as SynthModRoute,
   WaveForm,
 } from "../synth/polySynth.js";
+import { isCenteredModSource } from "../synth/modulation.js";
 import type { AudioEngine } from "../audio/engine.js";
 import type { AppAction } from "./actions.js";
 import { getBlockCells } from "./blocks.js";
@@ -60,7 +61,7 @@ export const createController = (deps: ControllerDependencies) => {
           source: route.source,
           target: "osc.unisonDetuneCents",
           amount: route.amount,
-          bipolar: true,
+          bipolar: isCenteredModSource(route.source),
         });
       }
 
@@ -69,7 +70,7 @@ export const createController = (deps: ControllerDependencies) => {
           source: route.source,
           target: "osc.unisonVoices",
           amount: route.amount,
-          bipolar: false,
+          bipolar: isCenteredModSource(route.source),
         });
       }
     }

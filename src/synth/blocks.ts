@@ -6,10 +6,12 @@ interface VoiceBlockInput {
   midi: number;
   patch: SynthPatch;
   output: AudioNode;
+  unisonPoolVoices?: number;
 }
 
 export interface VoiceBlocks {
   oscs: OscillatorNode[];
+  voiceGains: GainNode[];
   oscMix: GainNode;
   morph: MorphChain;
   amp: GainNode;
@@ -160,8 +162,12 @@ const buildUnisonDetuneOffsets = (
   unisonVoices: number,
   unisonDetuneCents: number,
 ): number[] => {
-  if (unisonVoices <= 1 || unisonDetuneCents <= 0) {
+  if (unisonVoices <= 1) {
     return [0];
+  }
+
+  if (unisonDetuneCents <= 0) {
+    return new Array<number>(unisonVoices).fill(0);
   }
 
   const center = (unisonVoices - 1) / 2;
@@ -181,24 +187,37 @@ export const unisonGainScale = (unisonVoices: number): number => {
   return 1 / Math.sqrt(unisonVoices);
 };
 
+export const unisonGainScaleForWeights = (
+  weights: readonly number[],
+): number => {
+  const energy = weights.reduce((sum, weight) => sum + weight * weight, 0);
+  if (energy <= 1e-6) return 1;
+  return 1 / Math.sqrt(energy);
+};
+
 export const createVoiceBlocks = (input: VoiceBlockInput): VoiceBlocks => {
   const amp = input.ctx.createGain();
   const morph = createMorphChain(input.ctx);
   const oscMix = input.ctx.createGain();
 
   const detuneOffsets = buildUnisonDetuneOffsets(
-    input.patch.voice.osc.unisonVoices,
+    input.unisonPoolVoices ?? input.patch.voice.osc.unisonVoices,
     input.patch.voice.osc.unisonDetuneCents,
   );
+  const voiceGains: GainNode[] = [];
   const oscs = detuneOffsets.map((detuneOffset) => {
     const osc = input.ctx.createOscillator();
+    const voiceGain = input.ctx.createGain();
     osc.type = input.patch.voice.osc.wave;
     osc.frequency.setValueAtTime(midiToHz(input.midi), input.ctx.currentTime);
     osc.detune.setValueAtTime(
       input.patch.voice.osc.detuneCents + detuneOffset,
       input.ctx.currentTime,
     );
-    osc.connect(oscMix);
+    voiceGain.gain.setValueAtTime(0, input.ctx.currentTime);
+    osc.connect(voiceGain);
+    voiceGain.connect(oscMix);
+    voiceGains.push(voiceGain);
     return osc;
   });
 
@@ -207,7 +226,7 @@ export const createVoiceBlocks = (input: VoiceBlockInput): VoiceBlocks => {
   morph.output.connect(amp);
   amp.connect(input.output);
 
-  return { oscs, oscMix, morph, amp };
+  return { oscs, voiceGains, oscMix, morph, amp };
 };
 
 export const scheduleAmpEnvelopeStart = (
